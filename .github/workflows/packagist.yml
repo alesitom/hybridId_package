@@ -3,15 +3,20 @@ name: Update Packagist
 on:
   push:
     branches: [main]
-    tags: ['*']
+    tags: ['v*.*.*']
+
+permissions: {}
 
 jobs:
   packagist:
     runs-on: ubuntu-latest
     steps:
       - name: Notify Packagist
+        env:
+          PACKAGIST_USERNAME: ${{ secrets.PACKAGIST_USERNAME }}
+          PACKAGIST_TOKEN: ${{ secrets.PACKAGIST_TOKEN }}
         run: |
           curl -s -X POST "https://packagist.org/api/update-package" \
             -d '{"repository":{"url":"https://github.com/alesitom/hybridId_package"}}' \
             -H "Content-Type: application/json" \
-            -u "${{ secrets.PACKAGIST_USERNAME }}:${{ secrets.PACKAGIST_TOKEN }}"
+            -u "${PACKAGIST_USERNAME}:${PACKAGIST_TOKEN}"

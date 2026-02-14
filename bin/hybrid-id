@@ -192,7 +192,7 @@ function commandHelp(?string $unknown = null): void
 
 function sanitize(string $input): string
 {
-    return preg_replace('/[\x00-\x1f\x7f]/', '', $input);
+    return preg_replace('/[\x00-\x1f\x7f-\x9f]/', '', $input);
 }
 
 function error(string $message): string

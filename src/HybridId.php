@@ -27,6 +27,13 @@ final class HybridId
         'extended' => ['length' => 24, 'ts' => 8, 'node' => 2, 'random' => 14],
     ];
 
+    /** @var array<int, string> Reverse lookup: length => profile name for O(1) detection */
+    private const array LENGTH_TO_PROFILE = [
+        16 => 'compact',
+        20 => 'standard',
+        24 => 'extended',
+    ];
+
     private static string $profile = 'standard';
     private static string $node = '';
     private static int $lastTimestamp = 0;
@@ -148,19 +155,13 @@ final class HybridId
      */
     public static function detectProfile(string $id): ?string
     {
-        $length = strlen($id);
+        $profile = self::LENGTH_TO_PROFILE[strlen($id)] ?? null;
 
-        if (!self::isBase62String($id)) {
+        if ($profile === null || !self::isBase62String($id)) {
             return null;
         }
 
-        foreach (self::PROFILES as $name => $config) {
-            if ($length === $config['length']) {
-                return $name;
-            }
-        }
-
-        return null;
+        return $profile;
     }
 
     /**
@@ -171,7 +172,9 @@ final class HybridId
         $profile ??= self::$profile;
 
         if (!isset(self::PROFILES[$profile])) {
-            throw new \InvalidArgumentException("Invalid profile: {$profile}");
+            throw new \InvalidArgumentException(
+                sprintf('Invalid profile "%s". Valid profiles: %s', $profile, implode(', ', array_keys(self::PROFILES))),
+            );
         }
 
         return round(self::PROFILES[$profile]['random'] * log(62, 2), 1);
@@ -187,7 +190,9 @@ final class HybridId
         $profile ??= self::$profile;
 
         if (!isset(self::PROFILES[$profile])) {
-            throw new \InvalidArgumentException("Invalid profile: {$profile}");
+            throw new \InvalidArgumentException(
+                sprintf('Invalid profile "%s". Valid profiles: %s', $profile, implode(', ', array_keys(self::PROFILES))),
+            );
         }
 
         return self::PROFILES[$profile];
@@ -217,12 +222,12 @@ final class HybridId
     {
         $options = [];
 
-        $profile = getenv('HYBRID_ID_PROFILE');
+        $profile = getenv('HYBRID_ID_PROFILE', true) ?: getenv('HYBRID_ID_PROFILE');
         if ($profile !== false && $profile !== '') {
             $options['profile'] = $profile;
         }
 
-        $node = getenv('HYBRID_ID_NODE');
+        $node = getenv('HYBRID_ID_NODE', true) ?: getenv('HYBRID_ID_NODE');
         if ($node !== false && $node !== '') {
             $options['node'] = $node;
         }

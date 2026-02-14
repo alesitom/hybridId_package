@@ -393,4 +393,98 @@ final class HybridIdTest extends TestCase
         // Should remain standard (default)
         $this->assertSame(20, strlen($id));
     }
+
+    public function testConfigureFromEnvRejectsInvalidProfile(): void
+    {
+        putenv('HYBRID_ID_PROFILE=../../etc/passwd');
+        putenv('HYBRID_ID_NODE');
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Invalid profile');
+
+        HybridId::configureFromEnv();
+
+        putenv('HYBRID_ID_PROFILE');
+    }
+
+    public function testConfigureFromEnvRejectsInvalidNode(): void
+    {
+        putenv('HYBRID_ID_PROFILE');
+        putenv('HYBRID_ID_NODE=<script>');
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Node must be exactly 2');
+
+        HybridId::configureFromEnv();
+
+        putenv('HYBRID_ID_NODE');
+    }
+
+    public function testConfigureFromEnvRejectsOversizedNode(): void
+    {
+        putenv('HYBRID_ID_PROFILE');
+        putenv('HYBRID_ID_NODE=' . str_repeat('A', 100));
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Node must be exactly 2');
+
+        HybridId::configureFromEnv();
+
+        putenv('HYBRID_ID_NODE');
+    }
+
+    // -------------------------------------------------------------------------
+    // Edge cases and boundary tests
+    // -------------------------------------------------------------------------
+
+    public function testDetectProfileRejectsNullBytes(): void
+    {
+        $this->assertNull(HybridId::detectProfile(str_repeat("\0", 20)));
+    }
+
+    public function testDetectProfileRejectsUnicodeOfValidLength(): void
+    {
+        // 20 bytes but contains non-base62 multibyte chars
+        $this->assertNull(HybridId::detectProfile('ABCDEFGHIJKLMNOPQRñ'));
+    }
+
+    public function testIsValidRejectsMaxLengthJunk(): void
+    {
+        // Correct length but with non-base62 chars
+        $this->assertFalse(HybridId::isValid(str_repeat('-', 16)));
+        $this->assertFalse(HybridId::isValid(str_repeat(' ', 20)));
+        $this->assertFalse(HybridId::isValid(str_repeat('+', 24)));
+    }
+
+    public function testConfigureRejectsEmptyNode(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Node must be exactly 2');
+
+        HybridId::configure(['node' => '']);
+    }
+
+    public function testConfigureRejectsSingleCharNode(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Node must be exactly 2');
+
+        HybridId::configure(['node' => 'A']);
+    }
+
+    public function testProfileConfigUsesDefaultWhenNullPassed(): void
+    {
+        HybridId::configure(['profile' => 'extended']);
+
+        $config = HybridId::profileConfig(null);
+
+        $this->assertSame(24, $config['length']);
+    }
+
+    public function testEntropyUsesDefaultWhenNullPassed(): void
+    {
+        HybridId::configure(['profile' => 'compact']);
+
+        $this->assertSame(35.7, HybridId::entropy(null));
+    }
 }
