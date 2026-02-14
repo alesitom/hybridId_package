@@ -79,6 +79,9 @@ final class HybridId
 
     /**
      * Generate a compact ID (16 chars: 8ts + 2node + 6random, ~35.7 bits entropy).
+     *
+     * @note For multi-node deployments with more than a few hundred IDs/second,
+     *       prefer standard() or extended() and set explicit node IDs via configure().
      */
     public static function compact(): string
     {
@@ -134,7 +137,9 @@ final class HybridId
         );
 
         if ($dt === false) {
-            throw new \RuntimeException('Failed to create DateTime from HybridId');
+            throw new \RuntimeException(
+                sprintf('Failed to create DateTime from HybridId (timestamp: %d ms)', $timestampMs),
+            );
         }
 
         return $dt;
@@ -205,7 +210,7 @@ final class HybridId
      */
     public static function profiles(): array
     {
-        return array_keys(self::PROFILES);
+        return ['compact', 'standard', 'extended'];
     }
 
     /**
@@ -255,6 +260,10 @@ final class HybridId
 
     private static function generateWithProfile(string $profile): string
     {
+        if (PHP_INT_SIZE < 8) {
+            throw new \RuntimeException('HybridId requires 64-bit PHP');
+        }
+
         $config = self::PROFILES[$profile];
 
         $now = (int) (microtime(true) * 1000);
@@ -264,11 +273,13 @@ final class HybridId
         if ($now <= self::$lastTimestamp) {
             $now = self::$lastTimestamp + 1;
         }
-        self::$lastTimestamp = $now;
 
         $timestamp = self::encodeBase62($now, $config['ts']);
         $node = self::resolveNode();
         $random = self::randomBase62($config['random']);
+
+        // Only update after successful generation to prevent counter desync on failure.
+        self::$lastTimestamp = $now;
 
         return $timestamp . $node . $random;
     }
@@ -288,14 +299,17 @@ final class HybridId
 
     private static function encodeBase62(int $num, int $length): string
     {
-        $result = '';
+        if ($num === 0) {
+            return str_repeat('0', $length);
+        }
 
+        $chars = [];
         while ($num > 0) {
-            $result = self::BASE62[$num % 62] . $result;
+            $chars[] = self::BASE62[$num % 62];
             $num = intdiv($num, 62);
         }
 
-        return str_pad($result, $length, '0', STR_PAD_LEFT);
+        return str_pad(implode('', array_reverse($chars)), $length, '0', STR_PAD_LEFT);
     }
 
     private static function decodeBase62(string $str): int

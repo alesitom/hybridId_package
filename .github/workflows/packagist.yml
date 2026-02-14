@@ -16,7 +16,7 @@ jobs:
           PACKAGIST_USERNAME: ${{ secrets.PACKAGIST_USERNAME }}
           PACKAGIST_TOKEN: ${{ secrets.PACKAGIST_TOKEN }}
         run: |
-          curl -s -X POST "https://packagist.org/api/update-package" \
-            -d '{"repository":{"url":"https://github.com/alesitom/hybridId_package"}}' \
+          curl --fail-with-body -s -X POST "https://packagist.org/api/update-package" \
+            -d "{\"repository\":{\"url\":\"https://github.com/${{ github.repository }}\"}}" \
             -H "Content-Type: application/json" \
             -u "${PACKAGIST_USERNAME}:${PACKAGIST_TOKEN}"
