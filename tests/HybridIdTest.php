@@ -343,94 +343,116 @@ final class HybridIdTest extends TestCase
 
     public function testConfigureFromEnvReadsProfile(): void
     {
-        putenv('HYBRID_ID_PROFILE=compact');
-        putenv('HYBRID_ID_NODE=');
+        try {
+            putenv('HYBRID_ID_PROFILE=compact');
+            putenv('HYBRID_ID_NODE=');
 
-        HybridId::configureFromEnv();
-        $id = HybridId::generate();
+            HybridId::configureFromEnv();
+            $id = HybridId::generate();
 
-        $this->assertSame(16, strlen($id));
-
-        putenv('HYBRID_ID_PROFILE');
+            $this->assertSame(16, strlen($id));
+        } finally {
+            putenv('HYBRID_ID_PROFILE');
+            putenv('HYBRID_ID_NODE');
+        }
     }
 
     public function testConfigureFromEnvReadsNode(): void
     {
-        putenv('HYBRID_ID_PROFILE=');
-        putenv('HYBRID_ID_NODE=Z3');
+        try {
+            putenv('HYBRID_ID_PROFILE=');
+            putenv('HYBRID_ID_NODE=Z3');
 
-        HybridId::configureFromEnv();
-        $id = HybridId::generate();
+            HybridId::configureFromEnv();
+            $id = HybridId::generate();
 
-        $this->assertSame('Z3', HybridId::extractNode($id));
-
-        putenv('HYBRID_ID_NODE');
+            $this->assertSame('Z3', HybridId::extractNode($id));
+        } finally {
+            putenv('HYBRID_ID_PROFILE');
+            putenv('HYBRID_ID_NODE');
+        }
     }
 
     public function testConfigureFromEnvReadsBoth(): void
     {
-        putenv('HYBRID_ID_PROFILE=extended');
-        putenv('HYBRID_ID_NODE=Q7');
+        try {
+            putenv('HYBRID_ID_PROFILE=extended');
+            putenv('HYBRID_ID_NODE=Q7');
 
-        HybridId::configureFromEnv();
-        $id = HybridId::generate();
+            HybridId::configureFromEnv();
+            $id = HybridId::generate();
 
-        $this->assertSame(24, strlen($id));
-        $this->assertSame('Q7', HybridId::extractNode($id));
-
-        putenv('HYBRID_ID_PROFILE');
-        putenv('HYBRID_ID_NODE');
+            $this->assertSame(24, strlen($id));
+            $this->assertSame('Q7', HybridId::extractNode($id));
+        } finally {
+            putenv('HYBRID_ID_PROFILE');
+            putenv('HYBRID_ID_NODE');
+        }
     }
 
     public function testConfigureFromEnvIgnoresUnsetVars(): void
     {
-        putenv('HYBRID_ID_PROFILE');
-        putenv('HYBRID_ID_NODE');
+        try {
+            putenv('HYBRID_ID_PROFILE');
+            putenv('HYBRID_ID_NODE');
 
-        HybridId::configureFromEnv();
-        $id = HybridId::generate();
+            HybridId::configureFromEnv();
+            $id = HybridId::generate();
 
-        // Should remain standard (default)
-        $this->assertSame(20, strlen($id));
+            // Should remain standard (default)
+            $this->assertSame(20, strlen($id));
+        } finally {
+            putenv('HYBRID_ID_PROFILE');
+            putenv('HYBRID_ID_NODE');
+        }
     }
 
     public function testConfigureFromEnvRejectsInvalidProfile(): void
     {
-        putenv('HYBRID_ID_PROFILE=../../etc/passwd');
-        putenv('HYBRID_ID_NODE');
+        try {
+            putenv('HYBRID_ID_PROFILE=../../etc/passwd');
+            putenv('HYBRID_ID_NODE');
 
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('Invalid profile');
+            $this->expectException(\InvalidArgumentException::class);
+            $this->expectExceptionMessage('Invalid profile');
 
-        HybridId::configureFromEnv();
-
-        putenv('HYBRID_ID_PROFILE');
+            HybridId::configureFromEnv();
+        } finally {
+            putenv('HYBRID_ID_PROFILE');
+            putenv('HYBRID_ID_NODE');
+        }
     }
 
     public function testConfigureFromEnvRejectsInvalidNode(): void
     {
-        putenv('HYBRID_ID_PROFILE');
-        putenv('HYBRID_ID_NODE=<script>');
+        try {
+            putenv('HYBRID_ID_PROFILE');
+            putenv('HYBRID_ID_NODE=<script>');
 
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('Node must be exactly 2');
+            $this->expectException(\InvalidArgumentException::class);
+            $this->expectExceptionMessage('Node must be exactly 2');
 
-        HybridId::configureFromEnv();
-
-        putenv('HYBRID_ID_NODE');
+            HybridId::configureFromEnv();
+        } finally {
+            putenv('HYBRID_ID_PROFILE');
+            putenv('HYBRID_ID_NODE');
+        }
     }
 
     public function testConfigureFromEnvRejectsOversizedNode(): void
     {
-        putenv('HYBRID_ID_PROFILE');
-        putenv('HYBRID_ID_NODE=' . str_repeat('A', 100));
+        try {
+            putenv('HYBRID_ID_PROFILE');
+            putenv('HYBRID_ID_NODE=' . str_repeat('A', 100));
 
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('Node must be exactly 2');
+            $this->expectException(\InvalidArgumentException::class);
+            $this->expectExceptionMessage('Node must be exactly 2');
 
-        HybridId::configureFromEnv();
-
-        putenv('HYBRID_ID_NODE');
+            HybridId::configureFromEnv();
+        } finally {
+            putenv('HYBRID_ID_PROFILE');
+            putenv('HYBRID_ID_NODE');
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -486,5 +508,31 @@ final class HybridIdTest extends TestCase
         HybridId::configure(['profile' => 'compact']);
 
         $this->assertSame(35.7, HybridId::entropy(null));
+    }
+
+    // -------------------------------------------------------------------------
+    // Overflow guard
+    // -------------------------------------------------------------------------
+
+    public function testEncodeBase62ThrowsOnOverflow(): void
+    {
+        $this->expectException(\OverflowException::class);
+
+        // Use reflection to test the private method with a value that exceeds 2 base62 chars (62^2 = 3844)
+        $method = new \ReflectionMethod(HybridId::class, 'encodeBase62');
+        $method->invoke(null, 3844, 2); // 3844 needs 3 chars, but length is 2
+    }
+
+    public function testEncodeBase62DoesNotThrowWithinBounds(): void
+    {
+        $method = new \ReflectionMethod(HybridId::class, 'encodeBase62');
+
+        // Max value for 2 chars: 62^2 - 1 = 3843
+        $result = $method->invoke(null, 3843, 2);
+        $this->assertSame(2, strlen($result));
+
+        // Zero
+        $result = $method->invoke(null, 0, 8);
+        $this->assertSame('00000000', $result);
     }
 }

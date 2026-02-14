@@ -210,7 +210,7 @@ final class HybridId
      */
     public static function profiles(): array
     {
-        return ['compact', 'standard', 'extended'];
+        return array_keys(self::PROFILES);
     }
 
     /**
@@ -309,7 +309,15 @@ final class HybridId
             $num = intdiv($num, 62);
         }
 
-        return str_pad(implode('', array_reverse($chars)), $length, '0', STR_PAD_LEFT);
+        $encoded = str_pad(implode('', array_reverse($chars)), $length, '0', STR_PAD_LEFT);
+
+        if (strlen($encoded) > $length) {
+            throw new \OverflowException(
+                sprintf('Value exceeds maximum for %d base62 characters', $length),
+            );
+        }
+
+        return $encoded;
     }
 
     private static function decodeBase62(string $str): int
@@ -332,13 +340,13 @@ final class HybridId
 
     private static function randomBase62(int $length): string
     {
-        $result = '';
+        $chars = [];
 
         for ($i = 0; $i < $length; $i++) {
-            $result .= self::BASE62[random_int(0, 61)];
+            $chars[] = self::BASE62[random_int(0, 61)];
         }
 
-        return $result;
+        return implode('', $chars);
     }
 
     private static function isBase62String(string $str): bool
