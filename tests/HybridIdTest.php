@@ -509,4 +509,30 @@ final class HybridIdTest extends TestCase
 
         $this->assertSame(35.7, HybridId::entropy(null));
     }
+
+    // -------------------------------------------------------------------------
+    // Overflow guard
+    // -------------------------------------------------------------------------
+
+    public function testEncodeBase62ThrowsOnOverflow(): void
+    {
+        $this->expectException(\OverflowException::class);
+
+        // Use reflection to test the private method with a value that exceeds 2 base62 chars (62^2 = 3844)
+        $method = new \ReflectionMethod(HybridId::class, 'encodeBase62');
+        $method->invoke(null, 3844, 2); // 3844 needs 3 chars, but length is 2
+    }
+
+    public function testEncodeBase62DoesNotThrowWithinBounds(): void
+    {
+        $method = new \ReflectionMethod(HybridId::class, 'encodeBase62');
+
+        // Max value for 2 chars: 62^2 - 1 = 3843
+        $result = $method->invoke(null, 3843, 2);
+        $this->assertSame(2, strlen($result));
+
+        // Zero
+        $result = $method->invoke(null, 0, 8);
+        $this->assertSame('00000000', $result);
+    }
 }
