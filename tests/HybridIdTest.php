@@ -161,10 +161,10 @@ final class HybridIdTest extends TestCase
         $tsStandard = HybridId::extractTimestamp(HybridId::standard());
         $tsExtended = HybridId::extractTimestamp(HybridId::extended());
 
-        $after = (int) (microtime(true) * 1000);
-
+        // Monotonic guard may increment beyond real time, allow small drift
         $this->assertGreaterThanOrEqual($before, $tsCompact);
-        $this->assertLessThanOrEqual($after, $tsExtended);
+        $this->assertLessThan($tsStandard, $tsCompact);
+        $this->assertLessThan($tsExtended, $tsStandard);
     }
 
     public function testExtractTimestampThrowsOnInvalidId(): void
@@ -276,6 +276,23 @@ final class HybridIdTest extends TestCase
 
         for ($i = 1; $i < count($timestamps); $i++) {
             $this->assertGreaterThanOrEqual($timestamps[$i - 1], $timestamps[$i]);
+        }
+    }
+
+    public function testTimestampStrictlyIncrementsWithinSameMillisecond(): void
+    {
+        // Generate many IDs rapidly — they will likely share the same real ms
+        $timestamps = [];
+        for ($i = 0; $i < 50; $i++) {
+            $timestamps[] = HybridId::extractTimestamp(HybridId::generate());
+        }
+
+        for ($i = 1; $i < count($timestamps); $i++) {
+            $this->assertGreaterThan(
+                $timestamps[$i - 1],
+                $timestamps[$i],
+                'Timestamps must strictly increase even within the same millisecond',
+            );
         }
     }
 

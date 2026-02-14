@@ -156,15 +156,29 @@ CREATE TABLE logs (
 
 ## Choosing a Profile
 
-- **`compact`**: Internal PKs, low-scale apps, storage-constrained systems
-- **`standard`**: General purpose, recommended default
-- **`extended`**: High-scale, public-facing IDs, when you need more entropy than UUID v7
+- **`compact` (16 chars)**: Internal PKs, low-scale apps, storage-constrained systems. ~35.7 bits entropy means 50% collision probability at ~236,000 IDs per millisecond per node. Not recommended for high-throughput systems.
+- **`standard` (20 chars)**: General purpose, recommended default. ~59.5 bits provides comfortable collision resistance for most applications.
+- **`extended` (24 chars)**: High-scale, public-facing IDs, when you need more entropy than UUID v7. ~83.4 bits of random entropy.
 
-> **Security note:** Do NOT use HybridId for security tokens (password resets, API keys, etc.). The timestamp is predictable and reduces effective entropy. Use `random_bytes()` with 128+ bits of pure entropy for those.
+## Security Considerations
+
+**Not for secrets:** Do NOT use HybridId for security tokens (password resets, API keys, session tokens, etc.). The timestamp is predictable and reduces effective entropy. Use `random_bytes()` with 128+ bits of pure entropy for those.
+
+**Timestamp disclosure:** The first 8 characters encode the creation time to the millisecond. Anyone with a HybridId can extract when it was created and which node generated it. This is inherent to the design (same as UUID v7). Do not use HybridId where creation time must be confidential.
+
+**Validation is not constant-time:** `isValid()` returns early on the first invalid character. If you compare HybridIds in security-sensitive contexts (e.g., authorization), use `hash_equals()` instead of `===` to prevent timing side-channels.
 
 ## Clock Drift Protection
 
-Includes a monotonic guard that prevents the timestamp from going backward due to NTP adjustments. If the system clock moves backward, the last known timestamp is preserved.
+The monotonic guard ensures timestamps never go backward and strictly increment even within the same millisecond. If the system clock moves backward (NTP adjustment), or multiple IDs are generated in the same millisecond, the timestamp increments by 1ms to guarantee strict chronological ordering.
+
+## Concurrency and Limitations
+
+**Per-process scope:** The monotonic guard uses static state that is scoped to a single PHP process. In PHP-FPM or mod_php, each request is a separate process with independent state. Two concurrent requests in the same millisecond on the same node rely on the random component for uniqueness.
+
+**Async runtimes:** In long-running processes (Swoole, ReactPHP, Amphp), the static state is shared within the process. The monotonic guard works correctly under cooperative scheduling (PHP Fibers), but has no atomicity guarantees under preemptive coroutines.
+
+**Node auto-detection:** The auto-detected node is derived from `gethostname()` and `getmypid()` via `crc32()`, reduced to 3,844 possible values. In clustered deployments with many processes, always set `HYBRID_ID_NODE` explicitly to guarantee node uniqueness.
 
 ## Requirements
 

@@ -8,6 +8,18 @@ final class HybridId
 {
     private const string BASE62 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
 
+    /** @var array<string, int> Reverse lookup: character => position for O(1) decoding */
+    private const array BASE62_MAP = [
+        '0' => 0,  '1' => 1,  '2' => 2,  '3' => 3,  '4' => 4,  '5' => 5,  '6' => 6,  '7' => 7,
+        '8' => 8,  '9' => 9,  'A' => 10, 'B' => 11, 'C' => 12, 'D' => 13, 'E' => 14, 'F' => 15,
+        'G' => 16, 'H' => 17, 'I' => 18, 'J' => 19, 'K' => 20, 'L' => 21, 'M' => 22, 'N' => 23,
+        'O' => 24, 'P' => 25, 'Q' => 26, 'R' => 27, 'S' => 28, 'T' => 29, 'U' => 30, 'V' => 31,
+        'W' => 32, 'X' => 33, 'Y' => 34, 'Z' => 35, 'a' => 36, 'b' => 37, 'c' => 38, 'd' => 39,
+        'e' => 40, 'f' => 41, 'g' => 42, 'h' => 43, 'i' => 44, 'j' => 45, 'k' => 46, 'l' => 47,
+        'm' => 48, 'n' => 49, 'o' => 50, 'p' => 51, 'q' => 52, 'r' => 53, 's' => 54, 't' => 55,
+        'u' => 56, 'v' => 57, 'w' => 58, 'x' => 59, 'y' => 60, 'z' => 61,
+    ];
+
     /** @var array<string, array{length: int, ts: int, node: int, random: int}> */
     private const array PROFILES = [
         'compact'  => ['length' => 16, 'ts' => 8, 'node' => 2, 'random' => 6],
@@ -221,7 +233,9 @@ final class HybridId
     }
 
     /**
-     * Reset all configuration to defaults. Useful for testing.
+     * Reset all configuration to defaults.
+     *
+     * @internal Intended for testing only. Do not call in production — breaks monotonic guarantee.
      */
     public static function reset(): void
     {
@@ -240,8 +254,11 @@ final class HybridId
 
         $now = (int) (microtime(true) * 1000);
 
-        // Monotonic guard: prevent timestamp from going backward (clock drift / NTP)
-        $now = max($now, self::$lastTimestamp);
+        // Monotonic guard: if clock drifts backward or same ms, increment to guarantee
+        // strict ordering and eliminate intra-millisecond collision on the timestamp portion.
+        if ($now <= self::$lastTimestamp) {
+            $now = self::$lastTimestamp + 1;
+        }
         self::$lastTimestamp = $now;
 
         $timestamp = self::encodeBase62($now, $config['ts']);
@@ -282,9 +299,9 @@ final class HybridId
         $len = strlen($str);
 
         for ($i = 0; $i < $len; $i++) {
-            $pos = strpos(self::BASE62, $str[$i]);
+            $pos = self::BASE62_MAP[$str[$i]] ?? null;
 
-            if ($pos === false) {
+            if ($pos === null) {
                 throw new \InvalidArgumentException("Invalid base62 character: {$str[$i]}");
             }
 
@@ -311,13 +328,7 @@ final class HybridId
             return false;
         }
 
-        for ($i = 0, $len = strlen($str); $i < $len; $i++) {
-            if (!str_contains(self::BASE62, $str[$i])) {
-                return false;
-            }
-        }
-
-        return true;
+        return strspn($str, self::BASE62) === strlen($str);
     }
 
     private static function assertValid(string $id): void
