@@ -49,24 +49,51 @@ function commandGenerate(array $args): void
     $count = 1;
     $node = null;
 
-    for ($i = 0; $i < count($args); $i++) {
-        match ($args[$i]) {
-            '-p', '--profile' => $profile = $args[++$i] ?? 'standard',
-            '-n', '--count'   => $count = (int) ($args[++$i] ?? 1),
-            '--node'          => $node = $args[++$i] ?? null,
-            default           => null,
-        };
+    for ($i = 0, $len = count($args); $i < $len; $i++) {
+        switch ($args[$i]) {
+            case '-p':
+            case '--profile':
+                if (!isset($args[$i + 1])) {
+                    die(error('Missing value for --profile'));
+                }
+                $profile = $args[++$i];
+                break;
+            case '-n':
+            case '--count':
+                if (!isset($args[$i + 1])) {
+                    die(error('Missing value for --count'));
+                }
+                $count = (int) $args[++$i];
+                break;
+            case '--node':
+                if (!isset($args[$i + 1])) {
+                    die(error('Missing value for --node'));
+                }
+                $node = $args[++$i];
+                break;
+        }
+    }
+
+    if ($count < 1) {
+        die(error('Count must be a positive integer'));
+    }
+    if ($count > 100000) {
+        die(error('Count must not exceed 100,000'));
     }
 
     if ($node !== null) {
-        HybridId::configure(['node' => $node]);
+        try {
+            HybridId::configure(['node' => $node]);
+        } catch (\InvalidArgumentException $e) {
+            die(error($e->getMessage()));
+        }
     }
 
     $method = match ($profile) {
         'compact'  => HybridId::compact(...),
         'standard' => HybridId::standard(...),
         'extended' => HybridId::extended(...),
-        default    => die(error("Unknown profile: {$profile}. Use: compact, standard, extended")),
+        default    => die(error('Unknown profile: ' . sanitize($profile) . '. Use: compact, standard, extended')),
     };
 
     for ($i = 0; $i < $count; $i++) {
@@ -78,14 +105,15 @@ function commandInspect(array $args): void
 {
     $id = $args[0] ?? null;
 
-    if ($id === null) {
+    if ($id === null || $id === '') {
         die(error('Usage: hybrid-id inspect <id>'));
     }
 
+    $id = sanitize($id);
     $profile = HybridId::detectProfile($id);
 
     if ($profile === null) {
-        die(error("Invalid HybridId: {$id}"));
+        die(error('Invalid HybridId: ' . $id));
     }
 
     $config = HybridId::profileConfig($profile);
@@ -134,7 +162,7 @@ function commandProfiles(): void
 function commandHelp(?string $unknown = null): void
 {
     if ($unknown !== null) {
-        fwrite(STDERR, "Unknown command: {$unknown}" . PHP_EOL . PHP_EOL);
+        fwrite(STDERR, 'Unknown command: ' . sanitize($unknown) . PHP_EOL . PHP_EOL);
     }
 
     echo "HybridId - Compact, time-sortable unique ID generator" . PHP_EOL;
@@ -160,6 +188,11 @@ function commandHelp(?string $unknown = null): void
     if ($unknown !== null) {
         exit(1);
     }
+}
+
+function sanitize(string $input): string
+{
+    return preg_replace('/[\x00-\x1f\x7f]/', '', $input);
 }
 
 function error(string $message): string
