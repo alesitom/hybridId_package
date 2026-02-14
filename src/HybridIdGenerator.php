@@ -360,10 +360,11 @@ final class HybridIdGenerator implements IdGenerator
 
     private static function randomBase62(int $length): string
     {
+        $bytes = random_bytes($length);
         $chars = [];
 
         for ($i = 0; $i < $length; $i++) {
-            $chars[] = self::BASE62[random_int(0, 61)];
+            $chars[] = self::BASE62[ord($bytes[$i]) % 62];
         }
 
         return implode('', $chars);
