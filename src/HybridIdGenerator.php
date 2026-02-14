@@ -281,6 +281,17 @@ final class HybridIdGenerator implements IdGenerator
         return array_keys(self::PROFILES);
     }
 
+    /**
+     * Compare two HybridIds chronologically.
+     *
+     * Returns -1, 0, or 1 — compatible with usort() and spaceship operator convention.
+     * Handles prefixed IDs by stripping prefixes before comparison.
+     */
+    public static function compare(string $a, string $b): int
+    {
+        return self::extractTimestamp($a) <=> self::extractTimestamp($b);
+    }
+
     // -------------------------------------------------------------------------
     // Internal
     // -------------------------------------------------------------------------
