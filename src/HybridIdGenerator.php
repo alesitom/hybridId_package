@@ -37,6 +37,12 @@ final class HybridIdGenerator implements IdGenerator
     private const string PREFIX_SEPARATOR = '_';
     private const int PREFIX_MAX_LENGTH = 8;
 
+    /** @var array<string, array{length: int, ts: int, node: int, random: int}> */
+    private static array $customProfiles = [];
+
+    /** @var array<int, string> */
+    private static array $customLengthToProfile = [];
+
     private readonly string $profile;
     private readonly string $node;
     private int $lastTimestamp = 0;
@@ -49,12 +55,12 @@ final class HybridIdGenerator implements IdGenerator
             throw new \RuntimeException('HybridId requires 64-bit PHP');
         }
 
-        if (!isset(self::PROFILES[$profile])) {
+        if (self::resolveProfile($profile) === null) {
             throw new \InvalidArgumentException(
                 sprintf(
                     'Invalid profile "%s". Valid profiles: %s',
                     $profile,
-                    implode(', ', array_keys(self::PROFILES)),
+                    implode(', ', self::profiles()),
                 ),
             );
         }
@@ -232,7 +238,7 @@ final class HybridIdGenerator implements IdGenerator
             }
         }
 
-        $profile = self::LENGTH_TO_PROFILE[strlen($raw)] ?? null;
+        $profile = self::resolveProfileByLength(strlen($raw));
 
         if ($profile === null || !self::isBase62String($raw)) {
             return null;
@@ -246,13 +252,15 @@ final class HybridIdGenerator implements IdGenerator
      */
     public static function entropy(string $profile): float
     {
-        if (!isset(self::PROFILES[$profile])) {
+        $config = self::resolveProfile($profile);
+
+        if ($config === null) {
             throw new \InvalidArgumentException(
-                sprintf('Invalid profile "%s". Valid profiles: %s', $profile, implode(', ', array_keys(self::PROFILES))),
+                sprintf('Invalid profile "%s". Valid profiles: %s', $profile, implode(', ', self::profiles())),
             );
         }
 
-        return round(self::PROFILES[$profile]['random'] * log(62, 2), 1);
+        return round($config['random'] * log(62, 2), 1);
     }
 
     /**
@@ -262,23 +270,76 @@ final class HybridIdGenerator implements IdGenerator
      */
     public static function profileConfig(string $profile): array
     {
-        if (!isset(self::PROFILES[$profile])) {
+        $config = self::resolveProfile($profile);
+
+        if ($config === null) {
             throw new \InvalidArgumentException(
-                sprintf('Invalid profile "%s". Valid profiles: %s', $profile, implode(', ', array_keys(self::PROFILES))),
+                sprintf('Invalid profile "%s". Valid profiles: %s', $profile, implode(', ', self::profiles())),
             );
         }
 
-        return self::PROFILES[$profile];
+        return $config;
     }
 
     /**
-     * Get all available profile names.
+     * Get all available profile names (built-in + custom).
      *
      * @return list<string>
      */
     public static function profiles(): array
     {
-        return array_keys(self::PROFILES);
+        return [...array_keys(self::PROFILES), ...array_keys(self::$customProfiles)];
+    }
+
+    /**
+     * Register a custom profile with a given random length.
+     *
+     * Timestamp (8) and node (2) are fixed — only random is configurable.
+     * Total length = 10 + random.
+     */
+    public static function registerProfile(string $name, int $random): void
+    {
+        if (!preg_match('/^[a-z][a-z0-9]*$/', $name)) {
+            throw new \InvalidArgumentException('Profile name must be lowercase alphanumeric, starting with a letter');
+        }
+
+        if (self::resolveProfile($name) !== null) {
+            throw new \InvalidArgumentException(
+                sprintf('Profile "%s" already exists', $name),
+            );
+        }
+
+        if ($random < 1) {
+            throw new \InvalidArgumentException('Random length must be at least 1');
+        }
+
+        $length = 8 + 2 + $random;
+
+        if (self::resolveProfileByLength($length) !== null) {
+            $existing = self::resolveProfileByLength($length);
+            throw new \InvalidArgumentException(
+                sprintf('Length %d conflicts with existing profile "%s"', $length, $existing),
+            );
+        }
+
+        self::$customProfiles[$name] = [
+            'length' => $length,
+            'ts' => 8,
+            'node' => 2,
+            'random' => $random,
+        ];
+        self::$customLengthToProfile[$length] = $name;
+    }
+
+    /**
+     * Remove all custom profiles.
+     *
+     * @internal Intended for testing only.
+     */
+    public static function resetProfiles(): void
+    {
+        self::$customProfiles = [];
+        self::$customLengthToProfile = [];
     }
 
     /**
@@ -296,9 +357,22 @@ final class HybridIdGenerator implements IdGenerator
     // Internal
     // -------------------------------------------------------------------------
 
+    /**
+     * @return array{length: int, ts: int, node: int, random: int}|null
+     */
+    private static function resolveProfile(string $name): ?array
+    {
+        return self::PROFILES[$name] ?? self::$customProfiles[$name] ?? null;
+    }
+
+    private static function resolveProfileByLength(int $length): ?string
+    {
+        return self::LENGTH_TO_PROFILE[$length] ?? self::$customLengthToProfile[$length] ?? null;
+    }
+
     private function generateWithProfile(string $profile, ?string $prefix): string
     {
-        $config = self::PROFILES[$profile];
+        $config = self::resolveProfile($profile);
 
         $now = (int) (microtime(true) * 1000);
 
