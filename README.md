@@ -182,7 +182,7 @@ The monotonic guard ensures timestamps never go backward and strictly increment 
 
 ## Requirements
 
-- PHP >= 8.3
+- PHP >= 8.3 (64-bit)
 - No external dependencies
 
 ## License
