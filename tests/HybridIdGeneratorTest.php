@@ -779,6 +779,140 @@ final class HybridIdGeneratorTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
+    // Custom profiles
+    // -------------------------------------------------------------------------
+
+    public function testRegisterProfileAndGenerate(): void
+    {
+        try {
+            HybridIdGenerator::registerProfile('ultra', 22);
+
+            $gen = new HybridIdGenerator(profile: 'ultra');
+            $id = $gen->generate();
+
+            $this->assertSame(32, strlen($id)); // 8ts + 2node + 22random
+            $this->assertTrue(HybridIdGenerator::isValid($id));
+            $this->assertSame('ultra', HybridIdGenerator::detectProfile($id));
+        } finally {
+            HybridIdGenerator::resetProfiles();
+        }
+    }
+
+    public function testCustomProfileEntropy(): void
+    {
+        try {
+            HybridIdGenerator::registerProfile('mega', 30);
+
+            $this->assertSame(178.6, HybridIdGenerator::entropy('mega'));
+        } finally {
+            HybridIdGenerator::resetProfiles();
+        }
+    }
+
+    public function testCustomProfileConfig(): void
+    {
+        try {
+            HybridIdGenerator::registerProfile('tiny', 2);
+
+            $config = HybridIdGenerator::profileConfig('tiny');
+
+            $this->assertSame(12, $config['length']);
+            $this->assertSame(8, $config['ts']);
+            $this->assertSame(2, $config['node']);
+            $this->assertSame(2, $config['random']);
+        } finally {
+            HybridIdGenerator::resetProfiles();
+        }
+    }
+
+    public function testCustomProfileAppearsInProfiles(): void
+    {
+        try {
+            HybridIdGenerator::registerProfile('ultra', 22);
+
+            $profiles = HybridIdGenerator::profiles();
+
+            $this->assertContains('ultra', $profiles);
+            $this->assertContains('compact', $profiles);
+            $this->assertContains('standard', $profiles);
+            $this->assertContains('extended', $profiles);
+        } finally {
+            HybridIdGenerator::resetProfiles();
+        }
+    }
+
+    public function testCustomProfileWithPrefix(): void
+    {
+        try {
+            HybridIdGenerator::registerProfile('ultra', 22);
+
+            $gen = new HybridIdGenerator(profile: 'ultra');
+            $id = $gen->generate('usr');
+
+            $this->assertStringStartsWith('usr_', $id);
+            $this->assertSame(36, strlen($id)); // 3 + 1 + 32
+            $this->assertTrue(HybridIdGenerator::isValid($id));
+            $this->assertSame('ultra', HybridIdGenerator::detectProfile($id));
+        } finally {
+            HybridIdGenerator::resetProfiles();
+        }
+    }
+
+    public function testRegisterProfileRejectsDuplicateName(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('already exists');
+
+        HybridIdGenerator::registerProfile('compact', 10);
+    }
+
+    public function testRegisterProfileRejectsLengthConflict(): void
+    {
+        try {
+            $this->expectException(\InvalidArgumentException::class);
+            $this->expectExceptionMessage('conflicts with');
+
+            // standard is 20 = 10 + 10 random, so random=10 would conflict
+            HybridIdGenerator::registerProfile('myprofile', 10);
+        } finally {
+            HybridIdGenerator::resetProfiles();
+        }
+    }
+
+    public function testRegisterProfileRejectsZeroRandom(): void
+    {
+        try {
+            $this->expectException(\InvalidArgumentException::class);
+            $this->expectExceptionMessage('at least 1');
+
+            HybridIdGenerator::registerProfile('norandom', 0);
+        } finally {
+            HybridIdGenerator::resetProfiles();
+        }
+    }
+
+    public function testRegisterProfileRejectsInvalidName(): void
+    {
+        try {
+            $this->expectException(\InvalidArgumentException::class);
+            $this->expectExceptionMessage('lowercase alphanumeric');
+
+            HybridIdGenerator::registerProfile('My-Profile', 10);
+        } finally {
+            HybridIdGenerator::resetProfiles();
+        }
+    }
+
+    public function testResetProfilesClearsCustom(): void
+    {
+        HybridIdGenerator::registerProfile('temp', 18);
+        HybridIdGenerator::resetProfiles();
+
+        $this->assertNotContains('temp', HybridIdGenerator::profiles());
+        $this->assertSame(['compact', 'standard', 'extended'], HybridIdGenerator::profiles());
+    }
+
+    // -------------------------------------------------------------------------
     // Edge cases
     // -------------------------------------------------------------------------
 
