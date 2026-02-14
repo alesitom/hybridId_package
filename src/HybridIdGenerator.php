@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace HybridId;
 
-final class HybridId
+final class HybridIdGenerator implements IdGenerator
 {
     private const string BASE62 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
 
@@ -37,78 +37,116 @@ final class HybridId
     private const string PREFIX_SEPARATOR = '_';
     private const int PREFIX_MAX_LENGTH = 8;
 
-    private static string $profile = 'standard';
-    private static string $node = '';
-    private static int $lastTimestamp = 0;
+    private readonly string $profile;
+    private readonly string $node;
+    private int $lastTimestamp = 0;
 
-    private function __construct() {}
-
-    /**
-     * Configure global defaults.
-     *
-     * @param array{profile?: string, node?: string} $options
-     */
-    public static function configure(array $options): void
-    {
-        if (isset($options['profile'])) {
-            if (!isset(self::PROFILES[$options['profile']])) {
-                throw new \InvalidArgumentException(
-                    sprintf(
-                        'Invalid profile "%s". Valid profiles: %s',
-                        $options['profile'],
-                        implode(', ', array_keys(self::PROFILES)),
-                    ),
-                );
-            }
-            self::$profile = $options['profile'];
+    public function __construct(
+        string $profile = 'standard',
+        ?string $node = null,
+    ) {
+        if (PHP_INT_SIZE < 8) {
+            throw new \RuntimeException('HybridId requires 64-bit PHP');
         }
 
-        if (isset($options['node'])) {
-            $node = $options['node'];
+        if (!isset(self::PROFILES[$profile])) {
+            throw new \InvalidArgumentException(
+                sprintf(
+                    'Invalid profile "%s". Valid profiles: %s',
+                    $profile,
+                    implode(', ', array_keys(self::PROFILES)),
+                ),
+            );
+        }
+        $this->profile = $profile;
+
+        if ($node !== null) {
             if (strlen($node) !== 2 || !self::isBase62String($node)) {
                 throw new \InvalidArgumentException('Node must be exactly 2 base62 characters (0-9, A-Z, a-z)');
             }
-            self::$node = $node;
+            $this->node = $node;
+        } else {
+            $this->node = self::autoDetectNode();
         }
     }
 
     /**
-     * Generate an ID using the configured default profile.
+     * Create an instance configured from environment variables.
+     *
+     * Reads HYBRID_ID_PROFILE and HYBRID_ID_NODE from the environment.
+     * Pairs well with vlucas/phpdotenv for .env file support.
      */
-    public static function generate(?string $prefix = null): string
+    public static function fromEnv(): self
     {
-        return self::applyPrefix(self::generateWithProfile(self::$profile), $prefix);
+        $profile = getenv('HYBRID_ID_PROFILE', true) ?: getenv('HYBRID_ID_PROFILE');
+        $node = getenv('HYBRID_ID_NODE', true) ?: getenv('HYBRID_ID_NODE');
+
+        return new self(
+            profile: ($profile !== false && $profile !== '') ? $profile : 'standard',
+            node: ($node !== false && $node !== '') ? $node : null,
+        );
+    }
+
+    // -------------------------------------------------------------------------
+    // Generation (instance methods)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Generate an ID using this instance's configured profile.
+     */
+    public function generate(?string $prefix = null): string
+    {
+        return $this->generateWithProfile($this->profile, $prefix);
     }
 
     /**
      * Generate a compact ID (16 chars: 8ts + 2node + 6random, ~35.7 bits entropy).
      *
      * @note For multi-node deployments with more than a few hundred IDs/second,
-     *       prefer standard() or extended() and set explicit node IDs via configure().
+     *       prefer standard() or extended() and set explicit node IDs.
      */
-    public static function compact(?string $prefix = null): string
+    public function compact(?string $prefix = null): string
     {
-        return self::applyPrefix(self::generateWithProfile('compact'), $prefix);
+        return $this->generateWithProfile('compact', $prefix);
     }
 
     /**
      * Generate a standard ID (20 chars: 8ts + 2node + 10random, ~59.5 bits entropy).
      */
-    public static function standard(?string $prefix = null): string
+    public function standard(?string $prefix = null): string
     {
-        return self::applyPrefix(self::generateWithProfile('standard'), $prefix);
+        return $this->generateWithProfile('standard', $prefix);
     }
 
     /**
      * Generate an extended ID (24 chars: 8ts + 2node + 14random, ~83.4 bits entropy).
      */
-    public static function extended(?string $prefix = null): string
+    public function extended(?string $prefix = null): string
     {
-        return self::applyPrefix(self::generateWithProfile('extended'), $prefix);
+        return $this->generateWithProfile('extended', $prefix);
     }
+
+    // -------------------------------------------------------------------------
+    // Getters
+    // -------------------------------------------------------------------------
+
+    public function getProfile(): string
+    {
+        return $this->profile;
+    }
+
+    public function getNode(): string
+    {
+        return $this->node;
+    }
+
+    // -------------------------------------------------------------------------
+    // Static utilities (no instance needed)
+    // -------------------------------------------------------------------------
 
     /**
      * Validate that a string is a well-formed HybridId of any known profile length.
+     * Handles both prefixed and unprefixed IDs.
      */
     public static function isValid(string $id): bool
     {
@@ -204,12 +242,10 @@ final class HybridId
     }
 
     /**
-     * Get the random entropy bits for a given profile (or current default).
+     * Get the random entropy bits for a given profile.
      */
-    public static function entropy(?string $profile = null): float
+    public static function entropy(string $profile): float
     {
-        $profile ??= self::$profile;
-
         if (!isset(self::PROFILES[$profile])) {
             throw new \InvalidArgumentException(
                 sprintf('Invalid profile "%s". Valid profiles: %s', $profile, implode(', ', array_keys(self::PROFILES))),
@@ -224,10 +260,8 @@ final class HybridId
      *
      * @return array{length: int, ts: int, node: int, random: int}
      */
-    public static function profileConfig(?string $profile = null): array
+    public static function profileConfig(string $profile): array
     {
-        $profile ??= self::$profile;
-
         if (!isset(self::PROFILES[$profile])) {
             throw new \InvalidArgumentException(
                 sprintf('Invalid profile "%s". Valid profiles: %s', $profile, implode(', ', array_keys(self::PROFILES))),
@@ -247,83 +281,35 @@ final class HybridId
         return array_keys(self::PROFILES);
     }
 
-    /**
-     * Configure from environment variables.
-     *
-     * Reads HYBRID_ID_PROFILE and HYBRID_ID_NODE from the environment.
-     * Pairs well with vlucas/phpdotenv for .env file support.
-     *
-     * .env example:
-     *   HYBRID_ID_PROFILE=standard
-     *   HYBRID_ID_NODE=A1
-     */
-    public static function configureFromEnv(): void
-    {
-        $options = [];
-
-        $profile = getenv('HYBRID_ID_PROFILE', true) ?: getenv('HYBRID_ID_PROFILE');
-        if ($profile !== false && $profile !== '') {
-            $options['profile'] = $profile;
-        }
-
-        $node = getenv('HYBRID_ID_NODE', true) ?: getenv('HYBRID_ID_NODE');
-        if ($node !== false && $node !== '') {
-            $options['node'] = $node;
-        }
-
-        if ($options !== []) {
-            self::configure($options);
-        }
-    }
-
-    /**
-     * Reset all configuration to defaults.
-     *
-     * @internal Intended for testing only. Do not call in production — breaks monotonic guarantee.
-     */
-    public static function reset(): void
-    {
-        self::$profile = 'standard';
-        self::$node = '';
-        self::$lastTimestamp = 0;
-    }
-
     // -------------------------------------------------------------------------
     // Internal
     // -------------------------------------------------------------------------
 
-    private static function generateWithProfile(string $profile): string
+    private function generateWithProfile(string $profile, ?string $prefix): string
     {
-        if (PHP_INT_SIZE < 8) {
-            throw new \RuntimeException('HybridId requires 64-bit PHP');
-        }
-
         $config = self::PROFILES[$profile];
 
         $now = (int) (microtime(true) * 1000);
 
         // Monotonic guard: if clock drifts backward or same ms, increment to guarantee
         // strict ordering and eliminate intra-millisecond collision on the timestamp portion.
-        if ($now <= self::$lastTimestamp) {
-            $now = self::$lastTimestamp + 1;
+        if ($now <= $this->lastTimestamp) {
+            $now = $this->lastTimestamp + 1;
         }
 
         $timestamp = self::encodeBase62($now, $config['ts']);
-        $node = self::resolveNode();
         $random = self::randomBase62($config['random']);
 
         // Only update after successful generation to prevent counter desync on failure.
-        self::$lastTimestamp = $now;
+        $this->lastTimestamp = $now;
 
-        return $timestamp . $node . $random;
+        $id = $timestamp . $this->node . $random;
+
+        return self::applyPrefix($id, $prefix);
     }
 
-    private static function resolveNode(): string
+    private static function autoDetectNode(): string
     {
-        if (self::$node !== '') {
-            return self::$node;
-        }
-
         $raw = (gethostname() ?: 'unknown') . ':' . getmypid();
         $hash = crc32($raw) & 0x7FFFFFFF;
         $nodeNum = $hash % 3844; // 62^2 = 3844, fits in exactly 2 base62 chars
