@@ -34,6 +34,9 @@ final class HybridId
         24 => 'extended',
     ];
 
+    private const string PREFIX_SEPARATOR = '_';
+    private const int PREFIX_MAX_LENGTH = 8;
+
     private static string $profile = 'standard';
     private static string $node = '';
     private static int $lastTimestamp = 0;
@@ -72,9 +75,9 @@ final class HybridId
     /**
      * Generate an ID using the configured default profile.
      */
-    public static function generate(): string
+    public static function generate(?string $prefix = null): string
     {
-        return self::generateWithProfile(self::$profile);
+        return self::applyPrefix(self::generateWithProfile(self::$profile), $prefix);
     }
 
     /**
@@ -83,25 +86,25 @@ final class HybridId
      * @note For multi-node deployments with more than a few hundred IDs/second,
      *       prefer standard() or extended() and set explicit node IDs via configure().
      */
-    public static function compact(): string
+    public static function compact(?string $prefix = null): string
     {
-        return self::generateWithProfile('compact');
+        return self::applyPrefix(self::generateWithProfile('compact'), $prefix);
     }
 
     /**
      * Generate a standard ID (20 chars: 8ts + 2node + 10random, ~59.5 bits entropy).
      */
-    public static function standard(): string
+    public static function standard(?string $prefix = null): string
     {
-        return self::generateWithProfile('standard');
+        return self::applyPrefix(self::generateWithProfile('standard'), $prefix);
     }
 
     /**
      * Generate an extended ID (24 chars: 8ts + 2node + 14random, ~83.4 bits entropy).
      */
-    public static function extended(): string
+    public static function extended(?string $prefix = null): string
     {
-        return self::generateWithProfile('extended');
+        return self::applyPrefix(self::generateWithProfile('extended'), $prefix);
     }
 
     /**
@@ -113,17 +116,19 @@ final class HybridId
     }
 
     /**
-     * Extract the millisecond timestamp from a HybridId.
+     * Extract the millisecond timestamp from a HybridId (with or without prefix).
      */
     public static function extractTimestamp(string $id): int
     {
         self::assertValid($id);
 
-        return self::decodeBase62(substr($id, 0, 8));
+        $raw = self::stripPrefix($id);
+
+        return self::decodeBase62(substr($raw, 0, 8));
     }
 
     /**
-     * Extract a DateTimeImmutable from a HybridId.
+     * Extract a DateTimeImmutable from a HybridId (with or without prefix).
      */
     public static function extractDateTime(string $id): \DateTimeImmutable
     {
@@ -146,23 +151,52 @@ final class HybridId
     }
 
     /**
-     * Extract the 2-character node identifier from a HybridId.
+     * Extract the 2-character node identifier from a HybridId (with or without prefix).
      */
     public static function extractNode(string $id): string
     {
         self::assertValid($id);
 
-        return substr($id, 8, 2);
+        $raw = self::stripPrefix($id);
+
+        return substr($raw, 8, 2);
+    }
+
+    /**
+     * Extract the prefix from a HybridId, or null if unprefixed.
+     */
+    public static function extractPrefix(string $id): ?string
+    {
+        $pos = strpos($id, self::PREFIX_SEPARATOR);
+
+        if ($pos === false) {
+            return null;
+        }
+
+        return substr($id, 0, $pos);
     }
 
     /**
      * Detect which profile a HybridId belongs to, or null if invalid.
+     * Handles both prefixed and unprefixed IDs.
      */
     public static function detectProfile(string $id): ?string
     {
-        $profile = self::LENGTH_TO_PROFILE[strlen($id)] ?? null;
+        $raw = self::stripPrefix($id);
 
-        if ($profile === null || !self::isBase62String($id)) {
+        // Validate prefix format if present
+        if ($raw !== $id) {
+            $prefix = substr($id, 0, strlen($id) - strlen($raw) - 1);
+
+            if ($prefix === '' || strlen($prefix) > self::PREFIX_MAX_LENGTH
+                || !preg_match('/^[a-z][a-z0-9]*$/', $prefix)) {
+                return null;
+            }
+        }
+
+        $profile = self::LENGTH_TO_PROFILE[strlen($raw)] ?? null;
+
+        if ($profile === null || !self::isBase62String($raw)) {
             return null;
         }
 
@@ -363,5 +397,40 @@ final class HybridId
         if (!self::isValid($id)) {
             throw new \InvalidArgumentException('Invalid HybridId format');
         }
+    }
+
+    private static function applyPrefix(string $id, ?string $prefix): string
+    {
+        if ($prefix === null) {
+            return $id;
+        }
+
+        self::validatePrefix($prefix);
+
+        return $prefix . self::PREFIX_SEPARATOR . $id;
+    }
+
+    private static function validatePrefix(string $prefix): void
+    {
+        if ($prefix === '' || strlen($prefix) > self::PREFIX_MAX_LENGTH
+            || !preg_match('/^[a-z][a-z0-9]*$/', $prefix)) {
+            throw new \InvalidArgumentException(
+                sprintf(
+                    'Prefix must be 1-%d lowercase alphanumeric characters, starting with a letter',
+                    self::PREFIX_MAX_LENGTH,
+                ),
+            );
+        }
+    }
+
+    private static function stripPrefix(string $id): string
+    {
+        $pos = strpos($id, self::PREFIX_SEPARATOR);
+
+        if ($pos === false) {
+            return $id;
+        }
+
+        return substr($id, $pos + 1);
     }
 }

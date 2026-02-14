@@ -48,6 +48,7 @@ function commandGenerate(array $args): void
     $profile = 'standard';
     $count = 1;
     $node = null;
+    $prefix = null;
 
     for ($i = 0, $len = count($args); $i < $len; $i++) {
         switch ($args[$i]) {
@@ -70,6 +71,12 @@ function commandGenerate(array $args): void
                     die(error('Missing value for --node'));
                 }
                 $node = $args[++$i];
+                break;
+            case '--prefix':
+                if (!isset($args[$i + 1])) {
+                    die(error('Missing value for --prefix'));
+                }
+                $prefix = $args[++$i];
                 break;
             default:
                 if (str_starts_with($args[$i], '-')) {
@@ -102,7 +109,11 @@ function commandGenerate(array $args): void
     };
 
     for ($i = 0; $i < $count; $i++) {
-        echo $method() . PHP_EOL;
+        try {
+            echo $method($prefix) . PHP_EOL;
+        } catch (\InvalidArgumentException $e) {
+            die(error($e->getMessage()));
+        }
     }
 }
 
@@ -121,15 +132,20 @@ function commandInspect(array $args): void
         die(error('Invalid HybridId: ' . $id));
     }
 
+    $prefix = HybridId::extractPrefix($id);
     $config = HybridId::profileConfig($profile);
     $timestamp = HybridId::extractTimestamp($id);
     $datetime = HybridId::extractDateTime($id);
     $node = HybridId::extractNode($id);
-    $random = substr($id, 10);
+    $rawId = $prefix !== null ? substr($id, strlen($prefix) + 1) : $id;
+    $random = substr($rawId, 10);
     $entropy = HybridId::entropy($profile);
 
     echo PHP_EOL;
     echo "  ID:         {$id}" . PHP_EOL;
+    if ($prefix !== null) {
+        echo "  Prefix:     {$prefix}" . PHP_EOL;
+    }
     echo "  Profile:    {$profile} ({$config['length']} chars)" . PHP_EOL;
     echo "  Timestamp:  {$timestamp}" . PHP_EOL;
     echo "  DateTime:   {$datetime->format('Y-m-d H:i:s.v')}" . PHP_EOL;
@@ -182,12 +198,14 @@ function commandHelp(?string $unknown = null): void
     echo "  -p, --profile <name>   Profile: compact (16), standard (20), extended (24)" . PHP_EOL;
     echo "  -n, --count <number>   Number of IDs to generate (default: 1)" . PHP_EOL;
     echo "  --node <XX>            Node identifier (2 base62 chars)" . PHP_EOL;
+    echo "  --prefix <name>        Prefix for self-documenting IDs (e.g., usr, ord)" . PHP_EOL;
     echo PHP_EOL;
     echo "Examples:" . PHP_EOL;
     echo "  hybrid-id generate" . PHP_EOL;
     echo "  hybrid-id generate -p compact -n 10" . PHP_EOL;
     echo "  hybrid-id generate -p extended --node A1" . PHP_EOL;
-    echo "  hybrid-id inspect 0A1b2C3dX9YyZzWwQq12" . PHP_EOL;
+    echo "  hybrid-id generate --prefix usr" . PHP_EOL;
+    echo "  hybrid-id inspect usr_0A1b2C3dX9YyZzWwQq12" . PHP_EOL;
     echo PHP_EOL;
 
     if ($unknown !== null) {

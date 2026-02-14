@@ -511,6 +511,181 @@ final class HybridIdTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
+    // Prefix support
+    // -------------------------------------------------------------------------
+
+    public function testGenerateWithPrefixFormatsCorrectly(): void
+    {
+        $id = HybridId::generate('usr');
+
+        $this->assertStringStartsWith('usr_', $id);
+        $this->assertSame(24, strlen($id)); // 3 prefix + 1 underscore + 20 standard
+    }
+
+    public function testAllProfilesWithPrefix(): void
+    {
+        $compact = HybridId::compact('log');
+        $standard = HybridId::standard('usr');
+        $extended = HybridId::extended('txn');
+
+        $this->assertStringStartsWith('log_', $compact);
+        $this->assertSame(20, strlen($compact)); // 3 + 1 + 16
+
+        $this->assertStringStartsWith('usr_', $standard);
+        $this->assertSame(24, strlen($standard)); // 3 + 1 + 20
+
+        $this->assertStringStartsWith('txn_', $extended);
+        $this->assertSame(28, strlen($extended)); // 3 + 1 + 24
+    }
+
+    public function testGenerateWithoutPrefixIsUnchanged(): void
+    {
+        $id = HybridId::generate();
+
+        $this->assertSame(20, strlen($id));
+        $this->assertStringNotContainsString('_', $id);
+    }
+
+    public function testGenerateWithNullPrefixIsUnchanged(): void
+    {
+        $id = HybridId::generate(null);
+
+        $this->assertSame(20, strlen($id));
+        $this->assertStringNotContainsString('_', $id);
+    }
+
+    public function testPrefixedIdIsValid(): void
+    {
+        $this->assertTrue(HybridId::isValid(HybridId::generate('usr')));
+        $this->assertTrue(HybridId::isValid(HybridId::compact('log')));
+        $this->assertTrue(HybridId::isValid(HybridId::extended('txn')));
+    }
+
+    public function testDetectProfileWithPrefix(): void
+    {
+        $this->assertSame('standard', HybridId::detectProfile(HybridId::generate('usr')));
+        $this->assertSame('compact', HybridId::detectProfile(HybridId::compact('log')));
+        $this->assertSame('extended', HybridId::detectProfile(HybridId::extended('txn')));
+    }
+
+    public function testExtractTimestampWithPrefix(): void
+    {
+        $before = (int) (microtime(true) * 1000);
+        $id = HybridId::generate('usr');
+        $after = (int) (microtime(true) * 1000);
+
+        $timestamp = HybridId::extractTimestamp($id);
+
+        $this->assertGreaterThanOrEqual($before, $timestamp);
+        $this->assertLessThanOrEqual($after, $timestamp);
+    }
+
+    public function testExtractNodeWithPrefix(): void
+    {
+        HybridId::configure(['node' => 'N1']);
+
+        $id = HybridId::generate('usr');
+
+        $this->assertSame('N1', HybridId::extractNode($id));
+    }
+
+    public function testExtractDateTimeWithPrefix(): void
+    {
+        $id = HybridId::generate('usr');
+        $dt = HybridId::extractDateTime($id);
+        $now = new \DateTimeImmutable();
+
+        $diff = abs($now->getTimestamp() - $dt->getTimestamp());
+
+        $this->assertLessThan(2, $diff);
+    }
+
+    public function testExtractPrefix(): void
+    {
+        $this->assertSame('usr', HybridId::extractPrefix(HybridId::generate('usr')));
+        $this->assertSame('log', HybridId::extractPrefix(HybridId::compact('log')));
+        $this->assertNull(HybridId::extractPrefix(HybridId::generate()));
+    }
+
+    public function testPrefixValidationRejectsEmpty(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Prefix must be');
+
+        HybridId::generate('');
+    }
+
+    public function testPrefixValidationRejectsUppercase(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Prefix must be');
+
+        HybridId::generate('USR');
+    }
+
+    public function testPrefixValidationRejectsSpecialChars(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Prefix must be');
+
+        HybridId::generate('usr!');
+    }
+
+    public function testPrefixValidationRejectsTooLong(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Prefix must be');
+
+        HybridId::generate('abcdefghi'); // 9 chars, max is 8
+    }
+
+    public function testPrefixValidationRejectsStartingWithDigit(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Prefix must be');
+
+        HybridId::generate('1usr');
+    }
+
+    public function testPrefixMaxLengthIsAccepted(): void
+    {
+        $id = HybridId::generate('abcdefgh'); // exactly 8 chars
+
+        $this->assertStringStartsWith('abcdefgh_', $id);
+        $this->assertTrue(HybridId::isValid($id));
+    }
+
+    public function testPrefixWithDigitsAfterFirstChar(): void
+    {
+        $id = HybridId::generate('usr2');
+
+        $this->assertStringStartsWith('usr2_', $id);
+        $this->assertTrue(HybridId::isValid($id));
+    }
+
+    public function testIsValidRejectsInvalidPrefixFormat(): void
+    {
+        // Uppercase prefix
+        $this->assertFalse(HybridId::isValid('USR_' . str_repeat('A', 20)));
+        // Prefix starting with digit
+        $this->assertFalse(HybridId::isValid('1usr_' . str_repeat('A', 20)));
+        // Prefix too long (9 chars)
+        $this->assertFalse(HybridId::isValid('abcdefghi_' . str_repeat('A', 20)));
+        // Empty prefix (just underscore)
+        $this->assertFalse(HybridId::isValid('_' . str_repeat('A', 20)));
+    }
+
+    public function testPrefixedIdsAreUnique(): void
+    {
+        $ids = [];
+        for ($i = 0; $i < 100; $i++) {
+            $ids[] = HybridId::generate('usr');
+        }
+
+        $this->assertCount(100, array_unique($ids));
+    }
+
+    // -------------------------------------------------------------------------
     // Overflow guard
     // -------------------------------------------------------------------------
 
