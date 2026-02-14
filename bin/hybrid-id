@@ -19,10 +19,11 @@ foreach ($autoloadPaths as $path) {
 }
 
 if (!$loaded) {
-    require __DIR__ . '/../src/HybridId.php';
+    require __DIR__ . '/../src/IdGenerator.php';
+    require __DIR__ . '/../src/HybridIdGenerator.php';
 }
 
-use HybridId\HybridId;
+use HybridId\HybridIdGenerator;
 
 // ---------------------------------------------------------------------------
 // CLI
@@ -93,24 +94,15 @@ function commandGenerate(array $args): void
         die(error('Count must not exceed 100,000'));
     }
 
-    if ($node !== null) {
-        try {
-            HybridId::configure(['node' => $node]);
-        } catch (\InvalidArgumentException $e) {
-            die(error($e->getMessage()));
-        }
+    try {
+        $gen = new HybridIdGenerator(profile: $profile, node: $node);
+    } catch (\InvalidArgumentException $e) {
+        die(error($e->getMessage()));
     }
-
-    $method = match ($profile) {
-        'compact'  => HybridId::compact(...),
-        'standard' => HybridId::standard(...),
-        'extended' => HybridId::extended(...),
-        default    => die(error('Unknown profile: ' . sanitize($profile) . '. Use: compact, standard, extended')),
-    };
 
     for ($i = 0; $i < $count; $i++) {
         try {
-            echo $method($prefix) . PHP_EOL;
+            echo $gen->generate($prefix) . PHP_EOL;
         } catch (\InvalidArgumentException $e) {
             die(error($e->getMessage()));
         }
@@ -126,20 +118,20 @@ function commandInspect(array $args): void
     }
 
     $id = sanitize($id);
-    $profile = HybridId::detectProfile($id);
+    $profile = HybridIdGenerator::detectProfile($id);
 
     if ($profile === null) {
         die(error('Invalid HybridId: ' . $id));
     }
 
-    $prefix = HybridId::extractPrefix($id);
-    $config = HybridId::profileConfig($profile);
-    $timestamp = HybridId::extractTimestamp($id);
-    $datetime = HybridId::extractDateTime($id);
-    $node = HybridId::extractNode($id);
+    $prefix = HybridIdGenerator::extractPrefix($id);
+    $config = HybridIdGenerator::profileConfig($profile);
+    $timestamp = HybridIdGenerator::extractTimestamp($id);
+    $datetime = HybridIdGenerator::extractDateTime($id);
+    $node = HybridIdGenerator::extractNode($id);
     $rawId = $prefix !== null ? substr($id, strlen($prefix) + 1) : $id;
     $random = substr($rawId, 10);
-    $entropy = HybridId::entropy($profile);
+    $entropy = HybridIdGenerator::entropy($profile);
 
     echo PHP_EOL;
     echo "  ID:         {$id}" . PHP_EOL;
@@ -168,9 +160,9 @@ function commandProfiles(): void
         'extended' => '> UUID v7',
     ];
 
-    foreach (HybridId::profiles() as $name) {
-        $config = HybridId::profileConfig($name);
-        $entropy = HybridId::entropy($name);
+    foreach (HybridIdGenerator::profiles() as $name) {
+        $config = HybridIdGenerator::profileConfig($name);
+        $entropy = HybridIdGenerator::entropy($name);
         $structure = "{$config['ts']}ts + {$config['node']}node + {$config['random']}rand";
         $cmp = $comparisons[$name];
 
