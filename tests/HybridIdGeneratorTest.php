@@ -729,6 +729,56 @@ final class HybridIdGeneratorTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
+    // Compare
+    // -------------------------------------------------------------------------
+
+    public function testCompareReturnsCorrectOrder(): void
+    {
+        $gen = new HybridIdGenerator();
+        $id1 = $gen->generate();
+        usleep(2000);
+        $id2 = $gen->generate();
+
+        $this->assertSame(-1, HybridIdGenerator::compare($id1, $id2));
+        $this->assertSame(1, HybridIdGenerator::compare($id2, $id1));
+    }
+
+    public function testCompareWorksWithUsort(): void
+    {
+        $gen = new HybridIdGenerator();
+        $ids = [];
+
+        for ($i = 0; $i < 20; $i++) {
+            $ids[] = $gen->generate();
+        }
+
+        $shuffled = $ids;
+        shuffle($shuffled);
+
+        usort($shuffled, HybridIdGenerator::compare(...));
+
+        $this->assertSame($ids, $shuffled);
+    }
+
+    public function testCompareHandlesPrefixedIds(): void
+    {
+        $gen = new HybridIdGenerator();
+        $id1 = $gen->generate('usr');
+        usleep(2000);
+        $id2 = $gen->generate('ord');
+
+        $this->assertSame(-1, HybridIdGenerator::compare($id1, $id2));
+    }
+
+    public function testCompareEqualTimestampsReturnsZero(): void
+    {
+        $gen = new HybridIdGenerator();
+        $id = $gen->generate();
+
+        $this->assertSame(0, HybridIdGenerator::compare($id, $id));
+    }
+
+    // -------------------------------------------------------------------------
     // Edge cases
     // -------------------------------------------------------------------------
 
