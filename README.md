@@ -4,14 +4,17 @@ Compact, time-sortable unique ID generator for PHP. A space-efficient alternativ
 
 ## Why HybridId?
 
-| Feature | UUID v4 (36 chars) | UUID v7 (36 chars) | HybridId (16-24+ chars) |
-|---|---|---|---|
-| Time-sortable | No | Yes | Yes |
-| URL-safe | No (hyphens) | No (hyphens) | Yes (base62) |
-| Storage | 36 bytes text | 36 bytes text | 16-24 bytes |
-| Human-readable | Low | Low | High |
-| Self-documenting | No | No | Yes (prefixes) |
-| Random entropy | 122 bits | 74 bits | 35.7 - 83.4+ bits |
+| Feature | UUID v4 | UUID v7 | ULID | Snowflake | HybridId |
+|---|---|---|---|---|---|
+| Length | 36 chars | 36 chars | 26 chars | 18-19 digits | 16-24+ chars |
+| Time-sortable | No | Yes | Yes | Yes | Yes |
+| URL-safe | No (hyphens) | No (hyphens) | Yes | Yes | Yes (base62) |
+| Human-readable | Low | Low | Medium | Low | High |
+| Self-documenting | No | No | No | No | Yes (prefixes) |
+| Multi-node safe | Yes | Yes | No | Yes (node bits) | Yes (node chars) |
+| Configurable size | No | No | No | No | Yes (profiles) |
+| Random entropy | 122 bits | 74 bits | 80 bits | 12 bits | 35.7 - 83.4+ bits |
+| Dependencies | None | None | Library | Library | None |
 
 ## Installation
 
