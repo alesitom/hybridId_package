@@ -15,8 +15,9 @@ jobs:
         env:
           PACKAGIST_USERNAME: ${{ secrets.PACKAGIST_USERNAME }}
           PACKAGIST_TOKEN: ${{ secrets.PACKAGIST_TOKEN }}
+          REPO_URL: https://github.com/${{ github.repository }}
         run: |
           curl --fail-with-body -s -X POST "https://packagist.org/api/update-package" \
-            -d "{\"repository\":{\"url\":\"https://github.com/${{ github.repository }}\"}}" \
+            -d "{\"repository\":{\"url\":\"${REPO_URL}\"}}" \
             -H "Content-Type: application/json" \
             -u "${PACKAGIST_USERNAME}:${PACKAGIST_TOKEN}"

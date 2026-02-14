@@ -343,94 +343,116 @@ final class HybridIdTest extends TestCase
 
     public function testConfigureFromEnvReadsProfile(): void
     {
-        putenv('HYBRID_ID_PROFILE=compact');
-        putenv('HYBRID_ID_NODE=');
+        try {
+            putenv('HYBRID_ID_PROFILE=compact');
+            putenv('HYBRID_ID_NODE=');
 
-        HybridId::configureFromEnv();
-        $id = HybridId::generate();
+            HybridId::configureFromEnv();
+            $id = HybridId::generate();
 
-        $this->assertSame(16, strlen($id));
-
-        putenv('HYBRID_ID_PROFILE');
+            $this->assertSame(16, strlen($id));
+        } finally {
+            putenv('HYBRID_ID_PROFILE');
+            putenv('HYBRID_ID_NODE');
+        }
     }
 
     public function testConfigureFromEnvReadsNode(): void
     {
-        putenv('HYBRID_ID_PROFILE=');
-        putenv('HYBRID_ID_NODE=Z3');
+        try {
+            putenv('HYBRID_ID_PROFILE=');
+            putenv('HYBRID_ID_NODE=Z3');
 
-        HybridId::configureFromEnv();
-        $id = HybridId::generate();
+            HybridId::configureFromEnv();
+            $id = HybridId::generate();
 
-        $this->assertSame('Z3', HybridId::extractNode($id));
-
-        putenv('HYBRID_ID_NODE');
+            $this->assertSame('Z3', HybridId::extractNode($id));
+        } finally {
+            putenv('HYBRID_ID_PROFILE');
+            putenv('HYBRID_ID_NODE');
+        }
     }
 
     public function testConfigureFromEnvReadsBoth(): void
     {
-        putenv('HYBRID_ID_PROFILE=extended');
-        putenv('HYBRID_ID_NODE=Q7');
+        try {
+            putenv('HYBRID_ID_PROFILE=extended');
+            putenv('HYBRID_ID_NODE=Q7');
 
-        HybridId::configureFromEnv();
-        $id = HybridId::generate();
+            HybridId::configureFromEnv();
+            $id = HybridId::generate();
 
-        $this->assertSame(24, strlen($id));
-        $this->assertSame('Q7', HybridId::extractNode($id));
-
-        putenv('HYBRID_ID_PROFILE');
-        putenv('HYBRID_ID_NODE');
+            $this->assertSame(24, strlen($id));
+            $this->assertSame('Q7', HybridId::extractNode($id));
+        } finally {
+            putenv('HYBRID_ID_PROFILE');
+            putenv('HYBRID_ID_NODE');
+        }
     }
 
     public function testConfigureFromEnvIgnoresUnsetVars(): void
     {
-        putenv('HYBRID_ID_PROFILE');
-        putenv('HYBRID_ID_NODE');
+        try {
+            putenv('HYBRID_ID_PROFILE');
+            putenv('HYBRID_ID_NODE');
 
-        HybridId::configureFromEnv();
-        $id = HybridId::generate();
+            HybridId::configureFromEnv();
+            $id = HybridId::generate();
 
-        // Should remain standard (default)
-        $this->assertSame(20, strlen($id));
+            // Should remain standard (default)
+            $this->assertSame(20, strlen($id));
+        } finally {
+            putenv('HYBRID_ID_PROFILE');
+            putenv('HYBRID_ID_NODE');
+        }
     }
 
     public function testConfigureFromEnvRejectsInvalidProfile(): void
     {
-        putenv('HYBRID_ID_PROFILE=../../etc/passwd');
-        putenv('HYBRID_ID_NODE');
+        try {
+            putenv('HYBRID_ID_PROFILE=../../etc/passwd');
+            putenv('HYBRID_ID_NODE');
 
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('Invalid profile');
+            $this->expectException(\InvalidArgumentException::class);
+            $this->expectExceptionMessage('Invalid profile');
 
-        HybridId::configureFromEnv();
-
-        putenv('HYBRID_ID_PROFILE');
+            HybridId::configureFromEnv();
+        } finally {
+            putenv('HYBRID_ID_PROFILE');
+            putenv('HYBRID_ID_NODE');
+        }
     }
 
     public function testConfigureFromEnvRejectsInvalidNode(): void
     {
-        putenv('HYBRID_ID_PROFILE');
-        putenv('HYBRID_ID_NODE=<script>');
+        try {
+            putenv('HYBRID_ID_PROFILE');
+            putenv('HYBRID_ID_NODE=<script>');
 
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('Node must be exactly 2');
+            $this->expectException(\InvalidArgumentException::class);
+            $this->expectExceptionMessage('Node must be exactly 2');
 
-        HybridId::configureFromEnv();
-
-        putenv('HYBRID_ID_NODE');
+            HybridId::configureFromEnv();
+        } finally {
+            putenv('HYBRID_ID_PROFILE');
+            putenv('HYBRID_ID_NODE');
+        }
     }
 
     public function testConfigureFromEnvRejectsOversizedNode(): void
     {
-        putenv('HYBRID_ID_PROFILE');
-        putenv('HYBRID_ID_NODE=' . str_repeat('A', 100));
+        try {
+            putenv('HYBRID_ID_PROFILE');
+            putenv('HYBRID_ID_NODE=' . str_repeat('A', 100));
 
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('Node must be exactly 2');
+            $this->expectException(\InvalidArgumentException::class);
+            $this->expectExceptionMessage('Node must be exactly 2');
 
-        HybridId::configureFromEnv();
-
-        putenv('HYBRID_ID_NODE');
+            HybridId::configureFromEnv();
+        } finally {
+            putenv('HYBRID_ID_PROFILE');
+            putenv('HYBRID_ID_NODE');
+        }
     }
 
     // -------------------------------------------------------------------------

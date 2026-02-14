@@ -71,6 +71,11 @@ function commandGenerate(array $args): void
                 }
                 $node = $args[++$i];
                 break;
+            default:
+                if (str_starts_with($args[$i], '-')) {
+                    die(error('Unknown option: ' . sanitize($args[$i])));
+                }
+                break;
         }
     }
 
