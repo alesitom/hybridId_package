@@ -1,0 +1,36 @@
+{
+    "name": "alesitom/hybrid-id",
+    "description": "Compact, time-sortable unique ID generator. A space-efficient alternative to UUID with configurable entropy profiles.",
+    "type": "library",
+    "license": "MIT",
+    "keywords": ["uuid", "id", "unique-id", "base62", "sortable", "compact"],
+    "authors": [
+        {
+            "name": "alesitom"
+        }
+    ],
+    "require": {
+        "php": ">=8.2"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^11.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "HybridId\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "HybridId\\Tests\\": "tests/"
+        }
+    },
+    "bin": ["bin/hybrid-id"],
+    "suggest": {
+        "vlucas/phpdotenv": "Load HYBRID_ID_PROFILE and HYBRID_ID_NODE from .env files (^5.6)"
+    },
+    "minimum-stability": "stable",
+    "config": {
+        "sort-packages": true
+    }
+}
