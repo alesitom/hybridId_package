@@ -173,6 +173,10 @@ final class HybridIdGenerator implements IdGenerator
 
     /**
      * Extract a DateTimeImmutable from a HybridId (with or without prefix).
+     *
+     * @note Under high throughput the monotonic guard increments timestamps
+     *       artificially, so the returned time may be slightly ahead of the
+     *       actual wall-clock time at which the ID was created.
      */
     public static function extractDateTime(string $id): \DateTimeImmutable
     {
@@ -393,6 +397,13 @@ final class HybridIdGenerator implements IdGenerator
         return self::applyPrefix($id, $prefix);
     }
 
+    /**
+     * Derive a deterministic 2-char node from hostname + PID.
+     *
+     * Produces 3,844 possible values (62^2). By the birthday paradox,
+     * 50% collision probability is reached at ~74 distinct host:pid pairs.
+     * For deployments with more than a handful of nodes, set the node explicitly.
+     */
     private static function autoDetectNode(): string
     {
         $raw = (gethostname() ?: 'unknown') . ':' . getmypid();
