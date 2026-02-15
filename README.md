@@ -99,7 +99,7 @@ $gen = HybridIdGenerator::fromEnv();
 
 ### Node auto-detection
 
-When no node is provided, the generator derives a deterministic 2-char identifier from `gethostname()` and `getmypid()`. For multi-server deployments, set an explicit node per instance to guarantee uniqueness.
+When no node is provided, the generator derives a deterministic 2-char identifier from `gethostname()` and `getmypid()`, yielding 3,844 possible values (62²). By the birthday paradox, 50% collision probability is reached at ~74 distinct host:pid pairs. For multi-server deployments or environments with many worker processes, always set an explicit node per instance to guarantee uniqueness.
 
 ## Generating IDs
 
@@ -247,7 +247,7 @@ HybridIdGenerator::registerProfile('tiny', 2);
 
 Constraints:
 - Profile name must be lowercase alphanumeric, starting with a letter
-- Random length must be at least 1
+- Random length must be between 1 and 128
 - Total length must not conflict with an existing profile
 
 ## Interface and Dependency Injection
@@ -386,13 +386,15 @@ CREATE TABLE orders (
 
 Each generator instance maintains a monotonic guard that ensures timestamps never go backward and strictly increment even within the same millisecond. If the system clock moves backward (NTP adjustment), or multiple IDs are generated in the same millisecond, the timestamp increments by 1ms to guarantee strict chronological ordering.
 
+**Timestamp drift under high throughput.** When N IDs are generated within the same millisecond, the last ID's timestamp will be `real_time + (N - 1)` ms. This means `extractDateTime()` may return a time slightly ahead of the actual wall-clock creation time. The drift is negligible in practice (e.g., 1,000 IDs/ms = 1 second of drift) and self-corrects as soon as wall-clock time catches up.
+
 ## Concurrency and Limitations
 
 **Per-instance scope.** The monotonic guard is scoped to each `HybridIdGenerator` instance. In PHP-FPM or mod_php, each request creates its own instance with independent state. Two concurrent requests in the same millisecond on the same node rely on the random component for uniqueness.
 
 **Async runtimes.** In long-running processes (Swoole, ReactPHP, Amphp), a shared instance maintains monotonic ordering within the process. The guard works correctly under cooperative scheduling (PHP Fibers), but has no atomicity guarantees under preemptive coroutines.
 
-**Node auto-detection.** The auto-detected node is derived from `gethostname()` and `getmypid()` via `crc32()`, reduced to 3,844 possible values. In clustered deployments with many processes, always set the node explicitly to guarantee uniqueness.
+**Node auto-detection.** The auto-detected node is derived from `gethostname()` and `getmypid()` via `crc32()`, reduced to 3,844 possible values (62²). By the birthday paradox, 50% collision probability is reached at ~74 distinct host:pid pairs. In clustered deployments, always set the node explicitly to guarantee uniqueness.
 
 ## Upgrading from v1.x
 
