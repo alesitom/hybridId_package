@@ -247,7 +247,7 @@ HybridIdGenerator::registerProfile('tiny', 2);
 
 Constraints:
 - Profile name must be lowercase alphanumeric, starting with a letter
-- Random length must be between 1 and 128
+- Random length must be between 6 and 128
 - Total length must not conflict with an existing profile
 
 ## Interface and Dependency Injection

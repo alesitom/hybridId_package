@@ -164,7 +164,7 @@ function commandProfiles(): void
         $config = HybridIdGenerator::profileConfig($name);
         $entropy = HybridIdGenerator::entropy($name);
         $structure = "{$config['ts']}ts + {$config['node']}node + {$config['random']}rand";
-        $cmp = $comparisons[$name];
+        $cmp = $comparisons[$name] ?? 'custom';
 
         printf("  %-10s  %-7d  %-21s  %-12s  %s" . PHP_EOL, $name, $config['length'], $structure, "{$entropy} bits", $cmp);
     }
