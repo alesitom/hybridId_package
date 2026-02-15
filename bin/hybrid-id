@@ -97,14 +97,14 @@ function commandGenerate(array $args): void
     try {
         $gen = new HybridIdGenerator(profile: $profile, node: $node);
     } catch (\InvalidArgumentException $e) {
-        die(error($e->getMessage()));
+        die(error(sanitize($e->getMessage())));
     }
 
     for ($i = 0; $i < $count; $i++) {
         try {
             echo $gen->generate($prefix) . PHP_EOL;
         } catch (\InvalidArgumentException $e) {
-            die(error($e->getMessage()));
+            die(error(sanitize($e->getMessage())));
         }
     }
 }
