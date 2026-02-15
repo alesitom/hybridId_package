@@ -719,6 +719,8 @@ final class HybridIdGeneratorTest extends TestCase
         $this->assertFalse(HybridIdGenerator::isValid('1usr_' . str_repeat('A', 20)));
         $this->assertFalse(HybridIdGenerator::isValid('abcdefghi_' . str_repeat('A', 20)));
         $this->assertFalse(HybridIdGenerator::isValid('_' . str_repeat('A', 20)));
+        $this->assertFalse(HybridIdGenerator::isValid('usr__' . str_repeat('A', 20)));
+        $this->assertFalse(HybridIdGenerator::isValid('a_b_' . str_repeat('A', 20)));
     }
 
     public function testPrefixedIdsAreUnique(): void
@@ -775,6 +777,31 @@ final class HybridIdGeneratorTest extends TestCase
         $this->assertSame(-1, HybridIdGenerator::compare($id1, $id2));
     }
 
+    public function testCompareAcrossProfiles(): void
+    {
+        $genCompact = new HybridIdGenerator(profile: 'compact');
+        $genExtended = new HybridIdGenerator(profile: 'extended');
+
+        $earlier = $genCompact->generate();
+        usleep(2000);
+        $later = $genExtended->generate();
+
+        $this->assertSame(-1, HybridIdGenerator::compare($earlier, $later));
+        $this->assertSame(1, HybridIdGenerator::compare($later, $earlier));
+    }
+
+    public function testCompareAcrossProfilesWithPrefixes(): void
+    {
+        $genCompact = new HybridIdGenerator(profile: 'compact');
+        $genExtended = new HybridIdGenerator(profile: 'extended');
+
+        $earlier = $genCompact->generate('log');
+        usleep(2000);
+        $later = $genExtended->generate('txn');
+
+        $this->assertSame(-1, HybridIdGenerator::compare($earlier, $later));
+    }
+
     public function testCompareEqualTimestampsReturnsZero(): void
     {
         $gen = new HybridIdGenerator();
@@ -817,14 +844,14 @@ final class HybridIdGeneratorTest extends TestCase
     public function testCustomProfileConfig(): void
     {
         try {
-            HybridIdGenerator::registerProfile('tiny', 2);
+            HybridIdGenerator::registerProfile('tiny', 8);
 
             $config = HybridIdGenerator::profileConfig('tiny');
 
-            $this->assertSame(12, $config['length']);
+            $this->assertSame(18, $config['length']);
             $this->assertSame(8, $config['ts']);
             $this->assertSame(2, $config['node']);
-            $this->assertSame(2, $config['random']);
+            $this->assertSame(8, $config['random']);
         } finally {
             HybridIdGenerator::resetProfiles();
         }
@@ -888,7 +915,7 @@ final class HybridIdGeneratorTest extends TestCase
     {
         try {
             $this->expectException(\InvalidArgumentException::class);
-            $this->expectExceptionMessage('between 1 and 128');
+            $this->expectExceptionMessage('between 6 and 128');
 
             HybridIdGenerator::registerProfile('norandom', 0);
         } finally {
@@ -900,9 +927,21 @@ final class HybridIdGeneratorTest extends TestCase
     {
         try {
             $this->expectException(\InvalidArgumentException::class);
-            $this->expectExceptionMessage('between 1 and 128');
+            $this->expectExceptionMessage('between 6 and 128');
 
             HybridIdGenerator::registerProfile('huge', 129);
+        } finally {
+            HybridIdGenerator::resetProfiles();
+        }
+    }
+
+    public function testRegisterProfileRejectsInsufficientRandom(): void
+    {
+        try {
+            $this->expectException(\InvalidArgumentException::class);
+            $this->expectExceptionMessage('between 6 and 128');
+
+            HybridIdGenerator::registerProfile('weak', 5);
         } finally {
             HybridIdGenerator::resetProfiles();
         }

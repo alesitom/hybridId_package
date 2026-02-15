@@ -233,10 +233,12 @@ final class HybridIdGenerator implements IdGenerator
         $raw = self::stripPrefix($id);
 
         // Validate prefix format if present
-        if ($raw !== $id) {
-            $prefix = substr($id, 0, strlen($id) - strlen($raw) - 1);
-
-            if ($prefix === '' || strlen($prefix) > self::PREFIX_MAX_LENGTH
+        $prefix = self::extractPrefix($id);
+        if ($raw !== $id && $prefix === null) {
+            return null;
+        }
+        if ($prefix !== null) {
+            if (strlen($prefix) > self::PREFIX_MAX_LENGTH
                 || !preg_match('/^[a-z][a-z0-9]*$/', $prefix)) {
                 return null;
             }
@@ -313,14 +315,14 @@ final class HybridIdGenerator implements IdGenerator
             );
         }
 
-        if ($random < 1 || $random > 128) {
-            throw new \InvalidArgumentException('Random length must be between 1 and 128');
+        if ($random < 6 || $random > 128) {
+            throw new \InvalidArgumentException('Random length must be between 6 and 128');
         }
 
         $length = 8 + 2 + $random;
 
-        if (self::resolveProfileByLength($length) !== null) {
-            $existing = self::resolveProfileByLength($length);
+        $existing = self::resolveProfileByLength($length);
+        if ($existing !== null) {
             throw new \InvalidArgumentException(
                 sprintf('Length %d conflicts with existing profile "%s"', $length, $existing),
             );
@@ -408,7 +410,10 @@ final class HybridIdGenerator implements IdGenerator
     {
         $raw = (gethostname() ?: 'unknown') . ':' . getmypid();
         $hash = crc32($raw) & 0x7FFFFFFF;
-        $nodeNum = $hash % 3844; // 62^2 = 3844, fits in exactly 2 base62 chars
+        // 62^2 = 3844 possible values, fitting exactly 2 base62 chars.
+        // Modulo bias: 2^31 % 3844 = 3148 non-zero, so values [0, 695] have a
+        // 1-in-558932 (~0.00018%) higher probability. Negligible for node hashing.
+        $nodeNum = $hash % 3844;
 
         return self::encodeBase62($nodeNum, 2);
     }
@@ -419,13 +424,13 @@ final class HybridIdGenerator implements IdGenerator
             return str_repeat('0', $length);
         }
 
-        $chars = [];
+        $encoded = '';
         while ($num > 0) {
-            $chars[] = self::BASE62[$num % 62];
+            $encoded = self::BASE62[$num % 62] . $encoded;
             $num = intdiv($num, 62);
         }
 
-        $encoded = str_pad(implode('', array_reverse($chars)), $length, '0', STR_PAD_LEFT);
+        $encoded = str_pad($encoded, $length, '0', STR_PAD_LEFT);
 
         if (strlen($encoded) > $length) {
             throw new \OverflowException(
