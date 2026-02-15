@@ -213,7 +213,7 @@ final class HybridIdGenerator implements IdGenerator
     {
         $pos = strpos($id, self::PREFIX_SEPARATOR);
 
-        if ($pos === false) {
+        if ($pos === false || $pos === 0) {
             return null;
         }
 
@@ -309,8 +309,8 @@ final class HybridIdGenerator implements IdGenerator
             );
         }
 
-        if ($random < 1) {
-            throw new \InvalidArgumentException('Random length must be at least 1');
+        if ($random < 1 || $random > 128) {
+            throw new \InvalidArgumentException('Random length must be between 1 and 128');
         }
 
         $length = 8 + 2 + $random;
@@ -445,11 +445,24 @@ final class HybridIdGenerator implements IdGenerator
 
     private static function randomBase62(int $length): string
     {
-        $bytes = random_bytes($length);
+        $limit = 248; // largest multiple of 62 ≤ 255 (4 × 62), eliminates modulo bias
         $chars = [];
+        $buffer = random_bytes((int) ceil($length * 1.25));
+        $pos = 0;
+        $bufLen = strlen($buffer);
 
-        for ($i = 0; $i < $length; $i++) {
-            $chars[] = self::BASE62[ord($bytes[$i]) % 62];
+        while (count($chars) < $length) {
+            if ($pos >= $bufLen) {
+                $buffer = random_bytes((int) ceil(($length - count($chars)) * 1.25));
+                $pos = 0;
+                $bufLen = strlen($buffer);
+            }
+
+            $byte = ord($buffer[$pos++]);
+
+            if ($byte < $limit) {
+                $chars[] = self::BASE62[$byte % 62];
+            }
         }
 
         return implode('', $chars);

@@ -640,6 +640,11 @@ final class HybridIdGeneratorTest extends TestCase
         $this->assertNull(HybridIdGenerator::extractPrefix($gen->generate()));
     }
 
+    public function testExtractPrefixReturnsNullForLeadingUnderscore(): void
+    {
+        $this->assertNull(HybridIdGenerator::extractPrefix('_ABCDEFGHIJ1234567890'));
+    }
+
     public function testPrefixValidationRejectsEmpty(): void
     {
         $gen = new HybridIdGenerator();
@@ -883,9 +888,21 @@ final class HybridIdGeneratorTest extends TestCase
     {
         try {
             $this->expectException(\InvalidArgumentException::class);
-            $this->expectExceptionMessage('at least 1');
+            $this->expectExceptionMessage('between 1 and 128');
 
             HybridIdGenerator::registerProfile('norandom', 0);
+        } finally {
+            HybridIdGenerator::resetProfiles();
+        }
+    }
+
+    public function testRegisterProfileRejectsExcessiveRandom(): void
+    {
+        try {
+            $this->expectException(\InvalidArgumentException::class);
+            $this->expectExceptionMessage('between 1 and 128');
+
+            HybridIdGenerator::registerProfile('huge', 129);
         } finally {
             HybridIdGenerator::resetProfiles();
         }
