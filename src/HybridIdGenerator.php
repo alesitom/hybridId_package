@@ -276,7 +276,7 @@ final class HybridIdGenerator implements IdGenerator
      * Returns an array with 'valid' => true and all components for valid IDs,
      * or 'valid' => false with partial data for invalid IDs.
      *
-     * @return array{valid: bool, prefix: ?string, profile?: string, body?: string, timestamp?: int, datetime?: \DateTimeImmutable, node?: string, random?: string}
+     * @return array{valid: bool, prefix: ?string, body: ?string, profile?: string, timestamp?: int, datetime?: ?\DateTimeImmutable, node?: string, random?: string}
      */
     public static function parse(string $id): array
     {
