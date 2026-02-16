@@ -47,10 +47,10 @@ final class ProfileTest extends TestCase
         $gen = new HybridIdGenerator(profile: Profile::Compact);
         $this->assertSame('compact', $gen->getProfile());
 
-        $gen = new HybridIdGenerator(profile: Profile::Standard);
+        $gen = new HybridIdGenerator(profile: Profile::Standard, node: 'T1');
         $this->assertSame('standard', $gen->getProfile());
 
-        $gen = new HybridIdGenerator(profile: Profile::Extended);
+        $gen = new HybridIdGenerator(profile: Profile::Extended, node: 'T1');
         $this->assertSame('extended', $gen->getProfile());
     }
 

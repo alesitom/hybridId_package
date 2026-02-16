@@ -40,7 +40,8 @@ final class ProfileRegistryTest extends TestCase
         $compact = $registry->get('compact');
         $this->assertNotNull($compact);
         $this->assertSame(16, $compact['length']);
-        $this->assertSame(6, $compact['random']);
+        $this->assertSame(0, $compact['node']);
+        $this->assertSame(8, $compact['random']);
 
         $standard = $registry->get('standard');
         $this->assertNotNull($standard);
@@ -216,7 +217,7 @@ final class ProfileRegistryTest extends TestCase
         $registry = ProfileRegistry::withDefaults();
         $registry->register('ultra', 22);
 
-        $gen = new HybridIdGenerator(profile: 'ultra', registry: $registry);
+        $gen = new HybridIdGenerator(profile: 'ultra', node: 'T1', registry: $registry);
 
         $this->assertSame('ultra', $gen->getProfile());
         $this->assertSame(32, $gen->bodyLength());
@@ -231,8 +232,8 @@ final class ProfileRegistryTest extends TestCase
         $registry2 = ProfileRegistry::withDefaults();
         $registry2->register('custom2', 22);
 
-        $gen1 = new HybridIdGenerator(profile: 'custom1', registry: $registry1);
-        $gen2 = new HybridIdGenerator(profile: 'custom2', registry: $registry2);
+        $gen1 = new HybridIdGenerator(profile: 'custom1', node: 'T1', registry: $registry1);
+        $gen2 = new HybridIdGenerator(profile: 'custom2', node: 'T1', registry: $registry2);
 
         $this->assertSame(28, $gen1->bodyLength());
         $this->assertSame(32, $gen2->bodyLength());
@@ -243,7 +244,7 @@ final class ProfileRegistryTest extends TestCase
         $registry = ProfileRegistry::withDefaults();
         $registry->register('isolated', 22);
 
-        new HybridIdGenerator(profile: 'isolated', registry: $registry);
+        new HybridIdGenerator(profile: 'isolated', node: 'T1', registry: $registry);
 
         // Global registry should not have 'isolated'
         $this->assertNotContains('isolated', HybridIdGenerator::profiles());

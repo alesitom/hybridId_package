@@ -21,7 +21,7 @@ final class UuidConverterTest extends TestCase
 
     public function testToUUIDv8ReturnsValidFormat(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
         $id = $gen->generate();
 
         $uuid = UuidConverter::toUUIDv8($id);
@@ -31,7 +31,7 @@ final class UuidConverterTest extends TestCase
 
     public function testToUUIDv8HasCorrectVersionBit(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
         $uuid = UuidConverter::toUUIDv8($gen->generate());
 
         // Version is the 13th hex char (position 14 with hyphen at 8)
@@ -41,7 +41,7 @@ final class UuidConverterTest extends TestCase
 
     public function testToUUIDv8HasCorrectVariantBits(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
         $uuid = UuidConverter::toUUIDv8($gen->generate());
 
         $hex = str_replace('-', '', $uuid);
@@ -62,7 +62,7 @@ final class UuidConverterTest extends TestCase
 
     public function testUUIDv8RoundTripStandard(): void
     {
-        $gen = new HybridIdGenerator(profile: 'standard');
+        $gen = new HybridIdGenerator(profile: 'standard', node: 'T1');
         $id = $gen->generate();
 
         $uuid = UuidConverter::toUUIDv8($id);
@@ -73,7 +73,7 @@ final class UuidConverterTest extends TestCase
 
     public function testUUIDv8RoundTripMultipleIds(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
 
         for ($i = 0; $i < 50; $i++) {
             $id = $gen->generate();
@@ -83,7 +83,7 @@ final class UuidConverterTest extends TestCase
 
     public function testUUIDv8PreservesTimestamp(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
         $id = $gen->generate();
         $originalTs = HybridIdGenerator::extractTimestamp($id);
 
@@ -98,7 +98,7 @@ final class UuidConverterTest extends TestCase
 
     public function testUUIDv8RejectsExtendedProfile(): void
     {
-        $gen = new HybridIdGenerator(profile: 'extended');
+        $gen = new HybridIdGenerator(profile: 'extended', node: 'T1');
         $id = $gen->generate();
 
         $this->expectException(InvalidProfileException::class);
@@ -123,7 +123,7 @@ final class UuidConverterTest extends TestCase
     public function testFromUUIDv8RejectsWrongVersion(): void
     {
         // A valid UUIDv4 should be rejected by fromUUIDv8
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
         $uuid = UuidConverter::toUUIDv4($gen->generate());
 
         $this->expectException(InvalidIdException::class);
@@ -134,7 +134,7 @@ final class UuidConverterTest extends TestCase
 
     public function testUUIDv8SortableByTimestamp(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
 
         $id1 = $gen->generate();
         usleep(2000);
@@ -153,7 +153,7 @@ final class UuidConverterTest extends TestCase
 
     public function testToUUIDv7ReturnsValidFormat(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
         $uuid = UuidConverter::toUUIDv7($gen->generate());
 
         $this->assertMatchesRegularExpression(self::UUID_PATTERN, $uuid);
@@ -161,7 +161,7 @@ final class UuidConverterTest extends TestCase
 
     public function testToUUIDv7HasCorrectVersionBit(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
         $uuid = UuidConverter::toUUIDv7($gen->generate());
 
         $hex = str_replace('-', '', $uuid);
@@ -170,7 +170,7 @@ final class UuidConverterTest extends TestCase
 
     public function testToUUIDv7HasCorrectVariantBits(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
         $uuid = UuidConverter::toUUIDv7($gen->generate());
 
         $hex = str_replace('-', '', $uuid);
@@ -180,7 +180,7 @@ final class UuidConverterTest extends TestCase
 
     public function testUUIDv7PreservesTimestamp(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
         $id = $gen->generate();
         $originalTs = HybridIdGenerator::extractTimestamp($id);
 
@@ -193,7 +193,7 @@ final class UuidConverterTest extends TestCase
 
     public function testUUIDv7RoundTripStandard(): void
     {
-        $gen = new HybridIdGenerator(profile: 'standard');
+        $gen = new HybridIdGenerator(profile: 'standard', node: 'T1');
         $id = $gen->generate();
 
         $uuid = UuidConverter::toUUIDv7($id);
@@ -215,7 +215,7 @@ final class UuidConverterTest extends TestCase
 
     public function testUUIDv7RejectsExtendedProfile(): void
     {
-        $gen = new HybridIdGenerator(profile: 'extended');
+        $gen = new HybridIdGenerator(profile: 'extended', node: 'T1');
 
         $this->expectException(InvalidProfileException::class);
 
@@ -231,7 +231,7 @@ final class UuidConverterTest extends TestCase
 
     public function testFromUUIDv7RejectsWrongVersion(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
         $uuid = UuidConverter::toUUIDv8($gen->generate());
 
         $this->expectException(InvalidIdException::class);
@@ -242,7 +242,7 @@ final class UuidConverterTest extends TestCase
 
     public function testFromUUIDv7AcceptsProfileEnum(): void
     {
-        $gen = new HybridIdGenerator(profile: 'standard');
+        $gen = new HybridIdGenerator(profile: 'standard', node: 'T1');
         $id = $gen->generate();
 
         $uuid = UuidConverter::toUUIDv7($id);
@@ -257,7 +257,7 @@ final class UuidConverterTest extends TestCase
 
     public function testToUUIDv4ReturnsValidFormat(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
         $uuid = UuidConverter::toUUIDv4($gen->generate());
 
         $this->assertMatchesRegularExpression(self::UUID_PATTERN, $uuid);
@@ -265,7 +265,7 @@ final class UuidConverterTest extends TestCase
 
     public function testToUUIDv4HasCorrectVersionBit(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
         $uuid = UuidConverter::toUUIDv4($gen->generate());
 
         $hex = str_replace('-', '', $uuid);
@@ -274,7 +274,7 @@ final class UuidConverterTest extends TestCase
 
     public function testToUUIDv4HasCorrectVariantBits(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
         $uuid = UuidConverter::toUUIDv4($gen->generate());
 
         $hex = str_replace('-', '', $uuid);
@@ -284,7 +284,7 @@ final class UuidConverterTest extends TestCase
 
     public function testToUUIDv4RejectsExtendedProfile(): void
     {
-        $gen = new HybridIdGenerator(profile: 'extended');
+        $gen = new HybridIdGenerator(profile: 'extended', node: 'T1');
 
         $this->expectException(InvalidProfileException::class);
 
@@ -300,7 +300,7 @@ final class UuidConverterTest extends TestCase
 
     public function testFromUUIDv4WithExplicitTimestampAndNode(): void
     {
-        $uuid = UuidConverter::toUUIDv4((new HybridIdGenerator())->generate());
+        $uuid = UuidConverter::toUUIDv4((new HybridIdGenerator(requireExplicitNode: false))->generate());
 
         $ts = (int) (microtime(true) * 1000);
         $recovered = UuidConverter::fromUUIDv4($uuid, Profile::Standard, $ts, 'A1');
@@ -312,7 +312,7 @@ final class UuidConverterTest extends TestCase
 
     public function testFromUUIDv4WithNullTimestampUsesCurrentTime(): void
     {
-        $uuid = UuidConverter::toUUIDv4((new HybridIdGenerator())->generate());
+        $uuid = UuidConverter::toUUIDv4((new HybridIdGenerator(requireExplicitNode: false))->generate());
 
         $before = (int) (microtime(true) * 1000);
         $recovered = UuidConverter::fromUUIDv4($uuid, 'standard');
@@ -325,7 +325,7 @@ final class UuidConverterTest extends TestCase
 
     public function testFromUUIDv4RejectsWrongVersion(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
         $uuid = UuidConverter::toUUIDv7($gen->generate());
 
         $this->expectException(InvalidIdException::class);
@@ -336,7 +336,7 @@ final class UuidConverterTest extends TestCase
 
     public function testFromUUIDv4RejectsInvalidNodeFormat(): void
     {
-        $uuid = UuidConverter::toUUIDv4((new HybridIdGenerator())->generate());
+        $uuid = UuidConverter::toUUIDv4((new HybridIdGenerator(requireExplicitNode: false))->generate());
 
         $this->expectException(InvalidIdException::class);
         $this->expectExceptionMessage('Node must be exactly 2');
@@ -350,7 +350,7 @@ final class UuidConverterTest extends TestCase
 
     public function testSameIdProducesDifferentUuids(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
         $id = $gen->generate();
 
         $v4 = UuidConverter::toUUIDv4($id);
@@ -364,7 +364,7 @@ final class UuidConverterTest extends TestCase
 
     public function testAllVersionsShareSameTimestampBits(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
         $id = $gen->generate();
 
         $v4hex = str_replace('-', '', UuidConverter::toUUIDv4($id));
@@ -402,7 +402,7 @@ final class UuidConverterTest extends TestCase
 
     public function testPrefixedIdConvertedCorrectly(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
         $id = $gen->generate('usr');
 
         // toUUIDv8 should parse the prefixed ID and convert the body

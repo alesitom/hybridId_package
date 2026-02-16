@@ -235,7 +235,7 @@ final class ApplicationTest extends TestCase
 
     public function testInspectUnprefixedId(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
         $id = $gen->generate();
 
         $output = new BufferedOutput();
@@ -251,7 +251,7 @@ final class ApplicationTest extends TestCase
 
     public function testInspectRejectsValidIdWithNullByte(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
         $validId = $gen->generate();
 
         $output = new BufferedOutput();
@@ -301,7 +301,7 @@ final class ApplicationTest extends TestCase
         $this->assertStringContainsString('compact', $text);
         $this->assertStringContainsString('standard', $text);
         $this->assertStringContainsString('extended', $text);
-        $this->assertStringContainsString('35.7 bits', $text);
+        $this->assertStringContainsString('47.6 bits', $text);
         $this->assertStringContainsString('59.5 bits', $text);
         $this->assertStringContainsString('83.4 bits', $text);
     }

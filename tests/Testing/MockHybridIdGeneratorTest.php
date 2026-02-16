@@ -137,7 +137,7 @@ final class MockHybridIdGeneratorTest extends TestCase
 
     public function testValidateChecksPrefix(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
         $id = $gen->generate('usr');
 
         $mock = new MockHybridIdGenerator([$id]);
@@ -148,7 +148,7 @@ final class MockHybridIdGeneratorTest extends TestCase
 
     public function testValidateAcceptsNullPrefix(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
         $id = $gen->generate('usr');
 
         $mock = new MockHybridIdGenerator([$id]);

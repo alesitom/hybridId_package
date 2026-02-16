@@ -9,7 +9,7 @@ use HybridId\Exception\InvalidProfileException;
 final class ProfileRegistry implements ProfileRegistryInterface
 {
     private const array BUILT_IN = [
-        'compact'  => ['length' => 16, 'ts' => 8, 'node' => 2, 'random' => 6],
+        'compact'  => ['length' => 16, 'ts' => 8, 'node' => 0, 'random' => 8],
         'standard' => ['length' => 20, 'ts' => 8, 'node' => 2, 'random' => 10],
         'extended' => ['length' => 24, 'ts' => 8, 'node' => 2, 'random' => 14],
     ];

@@ -33,7 +33,7 @@ final class UuidConverter
         };
 
         $timestamp = $parsed['timestamp'];
-        $nodeValue = HybridIdGenerator::decodeBase62($parsed['node']);
+        $nodeValue = $parsed['node'] !== null ? HybridIdGenerator::decodeBase62($parsed['node']) : 0;
         $randomValue = HybridIdGenerator::decodeBase62($parsed['random']);
 
         // custom_c: [2-bit profile index][60-bit random]
@@ -78,10 +78,15 @@ final class UuidConverter
         $config = HybridIdGenerator::profileConfig($profile);
 
         $tsChars = HybridIdGenerator::encodeBase62($timestamp, 8);
-        $nodeChars = HybridIdGenerator::encodeBase62($nodeValue, 2);
         $randomChars = HybridIdGenerator::encodeBase62($randomValue, $config['random']);
 
-        return $tsChars . $nodeChars . $randomChars;
+        if ($config['node'] > 0) {
+            $nodeChars = HybridIdGenerator::encodeBase62($nodeValue, $config['node']);
+
+            return $tsChars . $nodeChars . $randomChars;
+        }
+
+        return $tsChars . $randomChars;
     }
 
     // -------------------------------------------------------------------------
@@ -98,7 +103,7 @@ final class UuidConverter
         self::assertSupportedProfile($parsed['profile'], 'toUUIDv7');
 
         $timestamp = $parsed['timestamp'];
-        $nodeValue = HybridIdGenerator::decodeBase62($parsed['node']);
+        $nodeValue = $parsed['node'] !== null ? HybridIdGenerator::decodeBase62($parsed['node']) : 0;
         $randomValue = HybridIdGenerator::decodeBase62($parsed['random']);
 
         $hex = sprintf('%012x', $timestamp);
@@ -130,10 +135,15 @@ final class UuidConverter
         $config = HybridIdGenerator::profileConfig($profileName);
 
         $tsChars = HybridIdGenerator::encodeBase62($timestamp, 8);
-        $nodeChars = HybridIdGenerator::encodeBase62($nodeValue, 2);
         $randomChars = HybridIdGenerator::encodeBase62($randomValue, $config['random']);
 
-        return $tsChars . $nodeChars . $randomChars;
+        if ($config['node'] > 0) {
+            $nodeChars = HybridIdGenerator::encodeBase62($nodeValue, $config['node']);
+
+            return $tsChars . $nodeChars . $randomChars;
+        }
+
+        return $tsChars . $randomChars;
     }
 
     // -------------------------------------------------------------------------
@@ -150,7 +160,7 @@ final class UuidConverter
         self::assertSupportedProfile($parsed['profile'], 'toUUIDv4');
 
         $timestamp = $parsed['timestamp'];
-        $nodeValue = HybridIdGenerator::decodeBase62($parsed['node']);
+        $nodeValue = $parsed['node'] !== null ? HybridIdGenerator::decodeBase62($parsed['node']) : 0;
         $randomValue = HybridIdGenerator::decodeBase62($parsed['random']);
 
         $hex = sprintf('%012x', $timestamp);
@@ -196,7 +206,11 @@ final class UuidConverter
         $tsChars = HybridIdGenerator::encodeBase62($timestamp, 8);
         $randomChars = HybridIdGenerator::encodeBase62($randomValue, $config['random']);
 
-        return $tsChars . $nodeChars . $randomChars;
+        if ($config['node'] > 0) {
+            return $tsChars . $nodeChars . $randomChars;
+        }
+
+        return $tsChars . $randomChars;
     }
 
     // -------------------------------------------------------------------------

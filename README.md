@@ -13,7 +13,7 @@ Compact, time-sortable unique ID generator for PHP. A space-efficient alternativ
 | Self-documenting | No | No | No | No | Yes (prefixes) |
 | Multi-node safe | Yes | Yes | No | Yes (node bits) | Yes (node chars) |
 | Configurable size | No | No | No | No | Yes (profiles) |
-| Random entropy | 122 bits | 74 bits | 80 bits | 12 bits | 35.7 - 83.4+ bits |
+| Random entropy | 122 bits | 74 bits | 80 bits | 12 bits | 47.6 - 83.4+ bits |
 | Dependencies | None | None | Library | Library | None |
 
 ## Installation
@@ -29,10 +29,10 @@ Requires PHP 8.3, 8.4, or 8.5 (64-bit). No external dependencies.
 ```php
 use HybridId\HybridIdGenerator;
 
-$gen = new HybridIdGenerator();
+$gen = new HybridIdGenerator(node: 'A1');
 
-$id = $gen->generate();        // 0VBFDQz4CYRtntu09sbf
-$id = $gen->generate('usr');   // usr_0VBFDQz4CYRtntu09sbf
+$id = $gen->generate();        // 0VBFDQz4A1Rtntu09sbf
+$id = $gen->generate('usr');   // usr_0VBFDQz4A1Rtntu09sbf
 ```
 
 ## Profiles
@@ -41,20 +41,28 @@ Three built-in profiles with different size/entropy tradeoffs:
 
 | Profile | Length | Structure | Random entropy | vs UUID v7 (74 bits) |
 |---|---|---|---|---|
-| `compact` | 16 | 8ts + 2node + 6rand | 35.7 bits | Lower |
+| `compact` | 16 | 8ts + 8rand | 47.6 bits | Lower |
 | `standard` | 20 | 8ts + 2node + 10rand | 59.5 bits | Comparable |
 | `extended` | 24 | 8ts + 2node + 14rand | 83.4 bits | Higher |
 
 **Structure breakdown:**
 
 ```
-0VBFDQz4 CY Rtntu09sbf
+Standard / Extended:
+
+0VBFDQz4 A1 Rtntu09sbf
 |______| |_| |_________|
    ts   node   random
+
+Compact (no node):
+
+0VBFDQz4 xK9mLp2w
+|______| |________|
+   ts      random
 ```
 
 - **ts** (8 chars): Millisecond timestamp in base62. Enables chronological sorting. Covers ~6,920 years from epoch.
-- **node** (2 chars): Server/process identifier. Prevents cross-node collisions.
+- **node** (2 chars, standard/extended only): Server/process identifier. Prevents cross-node collisions. Compact omits this to maximize entropy within 16 characters.
 - **rand** (variable): Cryptographically secure random bytes. Prevents same-millisecond collisions.
 
 ## Creating a Generator
@@ -64,26 +72,35 @@ Three built-in profiles with different size/entropy tradeoffs:
 ```php
 use HybridId\HybridIdGenerator;
 
-// Default: standard profile, auto-detected node
-$gen = new HybridIdGenerator();
+// Standard profile with explicit node (recommended for production)
+$gen = new HybridIdGenerator(node: 'A1');
 
 // Explicit profile and node
 $gen = new HybridIdGenerator(profile: 'extended', node: 'A1');
 
+// Compact profile — no node needed (compact has no node component)
+$gen = new HybridIdGenerator(profile: 'compact');
+
 // With column size guard (throws OverflowException if prefix + body exceeds limit)
-$gen = new HybridIdGenerator(profile: 'extended', maxIdLength: 32);
+$gen = new HybridIdGenerator(profile: 'extended', node: 'A1', maxIdLength: 32);
 ```
 
-### Production node guard
+### Node requirement (production safety)
 
-In clustered deployments, auto-detected nodes can collide. Use `requireExplicitNode` to enforce explicit assignment:
+By default, standard and extended profiles **require** an explicit node. This prevents accidental use of auto-detected nodes in production, where collisions are likely in clustered deployments.
 
 ```php
-// Throws if node is not provided — prevents accidental auto-detection in production
-$gen = new HybridIdGenerator(profile: 'standard', requireExplicitNode: true);
+// Throws NodeRequiredException — no node provided for standard profile
+$gen = new HybridIdGenerator();
 
-// OK — explicit node satisfies the guard
-$gen = new HybridIdGenerator(profile: 'standard', node: 'A1', requireExplicitNode: true);
+// OK — explicit node
+$gen = new HybridIdGenerator(node: 'A1');
+
+// OK — compact profile has no node component, so no node is needed
+$gen = new HybridIdGenerator(profile: 'compact');
+
+// Opt out for local development / testing (auto-detects a random node)
+$gen = new HybridIdGenerator(requireExplicitNode: false);
 ```
 
 ### Via environment variables
@@ -97,7 +114,7 @@ Reads from:
 ```env
 HYBRID_ID_PROFILE=standard
 HYBRID_ID_NODE=A1
-HYBRID_ID_REQUIRE_NODE=1
+HYBRID_ID_REQUIRE_NODE=1    # Default is true; set to 0 to disable
 ```
 
 For `.env` file support, install [vlucas/phpdotenv](https://github.com/vlucas/phpdotenv):
@@ -115,20 +132,22 @@ $gen = HybridIdGenerator::fromEnv();
 
 ### Node auto-detection
 
-When no node is provided, the generator derives a deterministic 2-char identifier from `gethostname()` and `getmypid()`, yielding 3,844 possible values (62²). By the birthday paradox, 50% collision probability is reached at ~74 distinct host:pid pairs. For multi-server deployments or environments with many worker processes, always set an explicit node per instance to guarantee uniqueness.
+When `requireExplicitNode` is disabled and no node is provided, the generator creates a random 2-char node using `random_bytes()`. This yields 3,844 possible values (62²) per instance and is **non-deterministic** — each new instance gets a different random node.
+
+This is intended as a convenience for local development and testing only. For production deployments, always set an explicit node to guarantee uniqueness across instances.
 
 ## Generating IDs
 
 ```php
-$gen = new HybridIdGenerator();
+$gen = new HybridIdGenerator(node: 'A1');
 
 // Using the instance's configured profile (default: standard)
-$id = $gen->generate();       // 0VBFDQz4CYRtntu09sbf
+$id = $gen->generate();       // 0VBFDQz4A1Rtntu09sbf
 
 // Explicit profile methods
-$id = $gen->compact();        // 0VBFDQz4CY8xegI0
-$id = $gen->standard();       // 0VBFDQz5CYS0PQgr0sbf
-$id = $gen->extended();       // 0VBFDQz6CYxiF0G9pBKVwwn2
+$id = $gen->compact();        // 0VBFDQz4xK9mLp2w       (no node in compact)
+$id = $gen->standard();       // 0VBFDQz5A1S0PQgr0sbf
+$id = $gen->extended();       // 0VBFDQz6A1xiF0G9pBKVwwn2
 ```
 
 ## Prefixes
@@ -136,12 +155,12 @@ $id = $gen->extended();       // 0VBFDQz6CYxiF0G9pBKVwwn2
 Stripe-style prefixes make IDs self-documenting. Pass an optional prefix to any generation method:
 
 ```php
-$gen = new HybridIdGenerator();
+$gen = new HybridIdGenerator(node: 'A1');
 
-$id = $gen->generate('usr');   // usr_0VBFDQz4CYRtntu09sbf
-$id = $gen->generate('ord');   // ord_0VBFDQz5CYxiF0G9pBKV
-$id = $gen->compact('log');    // log_0VBFDQz6CY8xegI0
-$id = $gen->extended('txn');   // txn_0VBFDQz7CYpBKVwwn2xiF0
+$id = $gen->generate('usr');   // usr_0VBFDQz4A1Rtntu09sbf
+$id = $gen->generate('ord');   // ord_0VBFDQz5A1xiF0G9pBKV
+$id = $gen->compact('log');    // log_0VBFDQz6xK9mLp2w
+$id = $gen->extended('txn');   // txn_0VBFDQz7A1pBKVwwn2xiF0
 ```
 
 Prefix rules:
@@ -158,10 +177,10 @@ Each instance has its own profile, node, and monotonic counter. Use multiple gen
 
 ```php
 $userIds = new HybridIdGenerator(profile: 'extended', node: 'U1');
-$logIds  = new HybridIdGenerator(profile: 'compact', node: 'L1');
+$logIds  = new HybridIdGenerator(profile: 'compact');  // compact has no node
 
-$userId = $userIds->generate('usr');  // usr_... (24 char ID)
-$logId  = $logIds->generate('log');   // log_... (16 char ID)
+$userId = $userIds->generate('usr');  // usr_... (24 char body)
+$logId  = $logIds->generate('log');   // log_... (16 char body, no node)
 ```
 
 Instance state is fully independent -- different monotonic counters, different nodes, no cross-contamination.
@@ -187,7 +206,7 @@ HybridIdGenerator::detectProfile('bad');                    // null
 `validate()` checks that an ID matches **this instance's profile** and optionally a specific prefix:
 
 ```php
-$gen = new HybridIdGenerator(profile: 'extended');
+$gen = new HybridIdGenerator(profile: 'extended', node: 'A1');
 
 $gen->validate($extendedId);              // true — body length matches extended (24)
 $gen->validate($standardId);              // false — body length is 20, not 24
@@ -212,6 +231,10 @@ HybridIdGenerator::extractDateTime($id);   // DateTimeImmutable (2026-02-14 22:5
 HybridIdGenerator::extractNode($id);       // "A1"
 HybridIdGenerator::extractPrefix($id);     // "usr"
 HybridIdGenerator::extractPrefix($gen->generate());  // null (no prefix)
+
+// Compact IDs have no node
+$compact = $gen->compact();
+HybridIdGenerator::extractNode($compact);  // null
 ```
 
 ## Parsing
@@ -219,17 +242,20 @@ HybridIdGenerator::extractPrefix($gen->generate());  // null (no prefix)
 Extract all components in a single call with `parse()`:
 
 ```php
-$result = HybridIdGenerator::parse('usr_0VB0Td2u01mcw1hoy5Kg8mR');
+$result = HybridIdGenerator::parse('usr_0VB0Td2uA1mcw1hoy5Kg8mR');
 // [
 //     'valid'     => true,
 //     'prefix'    => 'usr',
 //     'profile'   => 'extended',
-//     'body'      => '0VB0Td2u01mcw1hoy5Kg8mR',
+//     'body'      => '0VB0Td2uA1mcw1hoy5Kg8mR',
 //     'timestamp' => 1708012345678,
 //     'datetime'  => DateTimeImmutable,
-//     'node'      => '01',
+//     'node'      => 'A1',
 //     'random'    => 'mcw1hoy5Kg8mR',
 // ]
+//
+// Compact IDs return null for node:
+// HybridIdGenerator::parse($compactId)['node']  → null
 
 // Invalid IDs return partial data with valid => false
 $result = HybridIdGenerator::parse('not_valid');
@@ -243,7 +269,7 @@ Compare IDs chronologically with `compare()`, compatible with `usort()`:
 ```php
 use HybridId\HybridIdGenerator;
 
-$gen = new HybridIdGenerator();
+$gen = new HybridIdGenerator(node: 'A1');
 $ids = [];
 
 for ($i = 0; $i < 100; $i++) {
@@ -265,14 +291,14 @@ usort($mixed, HybridIdGenerator::compare(...));
 ```php
 use HybridId\HybridIdGenerator;
 
-HybridIdGenerator::entropy('compact');       // 35.7
+HybridIdGenerator::entropy('compact');       // 47.6
 HybridIdGenerator::entropy('standard');      // 59.5
 HybridIdGenerator::entropy('extended');      // 83.4
 
 HybridIdGenerator::profiles();               // ['compact', 'standard', 'extended']
 
 HybridIdGenerator::profileConfig('compact');
-// ['length' => 16, 'ts' => 8, 'node' => 2, 'random' => 6]
+// ['length' => 16, 'ts' => 8, 'node' => 0, 'random' => 8]
 
 $gen = new HybridIdGenerator(profile: 'extended', node: 'A1');
 $gen->getProfile();      // "extended"
@@ -283,7 +309,7 @@ $gen->getMaxIdLength();  // null (no limit set)
 
 ## Custom Profiles
 
-Register profiles with custom random lengths. Timestamp (8) and node (2) are fixed -- only the random portion is configurable:
+Register profiles with custom random lengths. Custom profiles always include timestamp (8) + node (2) + your random portion:
 
 ```php
 use HybridId\HybridIdGenerator;
@@ -291,7 +317,7 @@ use HybridId\HybridIdGenerator;
 // Register a 32-char profile: 8ts + 2node + 22random
 HybridIdGenerator::registerProfile('ultra', 22);
 
-$gen = new HybridIdGenerator(profile: 'ultra');
+$gen = new HybridIdGenerator(profile: 'ultra', node: 'A1');
 $id = $gen->generate('txn');
 
 strlen($id);                                    // 36 (3 prefix + 1 underscore + 32)
@@ -376,7 +402,7 @@ interface IdGenerator
 ```
 
 ```bash
-# Inspect an existing ID
+# Inspect a standard ID (shows node)
 ./vendor/bin/hybrid-id inspect usr_0VBFDQz4A1Rtntu09sbf
 
 #   ID:         usr_0VBFDQz4A1Rtntu09sbf
@@ -388,6 +414,17 @@ interface IdGenerator
 #   Random:     Rtntu09sbf
 #   Entropy:    59.5 bits
 #   Valid:      yes
+
+# Inspect a compact ID (no node)
+./vendor/bin/hybrid-id inspect 0VBFDQz4xK9mLp2w
+
+#   ID:         0VBFDQz4xK9mLp2w
+#   Profile:    compact (16 chars)
+#   Timestamp:  1771109611324
+#   DateTime:   2026-02-14 22:53:31.324
+#   Random:     xK9mLp2w
+#   Entropy:    47.6 bits
+#   Valid:      yes
 ```
 
 ```bash
@@ -396,7 +433,7 @@ interface IdGenerator
 
 #   Profile     Length   Structure              Random bits   vs UUID v7
 #   -------     ------   ---------              -----------   ----------
-#   compact     16       8ts + 2node + 6rand    35.7 bits     < UUID v7
+#   compact     16       8ts + 8rand            47.6 bits     < UUID v7
 #   standard    20       8ts + 2node + 10rand   59.5 bits     ~ UUID v7
 #   extended    24       8ts + 2node + 14rand   83.4 bits     > UUID v7
 ```
@@ -498,7 +535,7 @@ These return synthetic boundary IDs (all-zero or all-max node+random) suitable f
 
 ## Choosing a Profile
 
-- **`compact` (16 chars)**: Internal PKs, low-scale apps, storage-constrained systems. ~35.7 bits entropy means 50% collision probability at ~236,000 IDs per millisecond per node. Not recommended for high-throughput multi-node systems.
+- **`compact` (16 chars)**: Internal PKs, low-scale apps, storage-constrained systems. No node component — all 8 non-timestamp characters are random (~47.6 bits entropy). 50% collision probability at ~18.9 million IDs per millisecond globally. Not recommended for high-throughput distributed systems where node isolation is critical.
 - **`standard` (20 chars)**: General purpose, recommended default. ~59.5 bits provides comfortable collision resistance for most applications.
 - **`extended` (24 chars)**: High-scale, public-facing IDs, when you need more entropy than UUID v7. ~83.4 bits of random entropy.
 - **Custom profiles**: Use `registerProfile()` when built-in profiles don't match your requirements.
@@ -525,9 +562,56 @@ Each generator instance maintains a monotonic guard that ensures timestamps neve
 
 **Async runtimes.** In long-running processes (Swoole, ReactPHP, Amphp), a shared instance maintains monotonic ordering within the process. The guard works correctly under cooperative scheduling (PHP Fibers), but has no atomicity guarantees under preemptive coroutines.
 
-**Node auto-detection.** The auto-detected node is derived from `gethostname()` and `getmypid()` via `crc32()`, reduced to 3,844 possible values (62²). By the birthday paradox, 50% collision probability is reached at ~74 distinct host:pid pairs. In clustered deployments, always set the node explicitly to guarantee uniqueness.
+**Node auto-detection.** When `requireExplicitNode` is disabled, the auto-detected node is a random 2-char identifier from `random_bytes()`, yielding 3,844 possible values (62²). Each new instance gets a different random node. In clustered deployments, always set the node explicitly to guarantee uniqueness — the default `requireExplicitNode: true` enforces this for standard and extended profiles.
 
 ## Upgrading
+
+### From v3.x to v4.0.0
+
+v4.0.0 contains breaking changes to improve entropy and production safety.
+
+**1. Compact profile no longer includes a node component.**
+
+The compact profile structure changed from `8ts + 2node + 6rand` (35.7 bits entropy) to `8ts + 8rand` (47.6 bits entropy). The total length remains 16 characters.
+
+```php
+// v3: compact IDs had a node
+HybridIdGenerator::extractNode($compactId); // "A1"
+
+// v4: compact IDs have no node
+HybridIdGenerator::extractNode($compactId); // null
+HybridIdGenerator::parse($compactId)['node']; // null
+```
+
+If you have existing compact IDs in your database, they remain valid — `isValid()` and `detectProfile()` still work based on body length. However, `extractNode()` now returns `null` for all compact IDs (including legacy ones that did contain a node).
+
+**2. `requireExplicitNode` now defaults to `true`.**
+
+Standard and extended profiles throw `NodeRequiredException` if no node is provided. This prevents accidental auto-detection in production.
+
+```php
+// v3: worked fine, auto-detected node
+$gen = new HybridIdGenerator();
+
+// v4: throws NodeRequiredException
+$gen = new HybridIdGenerator();
+
+// v4: provide an explicit node
+$gen = new HybridIdGenerator(node: 'A1');
+
+// v4: or opt out for local dev/testing
+$gen = new HybridIdGenerator(requireExplicitNode: false);
+```
+
+The `HYBRID_ID_REQUIRE_NODE` env var now defaults to `true` when not set. Set it to `0` to disable.
+
+**3. `autoDetectNode()` now uses `random_bytes()` instead of `crc32(hostname:pid)`.**
+
+The auto-detected node is no longer deterministic. Each instance gets a different random node. This eliminates the collision weakness of the old `crc32` approach but means the same process may generate different nodes across restarts. This reinforces that auto-detection is for development only.
+
+**4. `decodeBase62()` overflow detection fixed.**
+
+The internal `decodeBase62()` method now uses arithmetic bounds checking instead of the unreliable `is_float()` check. This prevents silent overflow on values exceeding `PHP_INT_MAX`.
 
 ### From v2.x to v3.0.0
 
@@ -590,7 +674,9 @@ HybridIdGenerator::recommendedColumnSize('standard', 3);
 
 ### ID format compatibility
 
-The generated ID format is identical across all versions. IDs generated by v1.x are fully valid and readable by v3.0.0 utilities.
+Standard and extended ID formats are identical across all versions. IDs generated by v1.x/v2.x/v3.x are fully valid and readable by v4.0.0 utilities.
+
+**Note:** Compact IDs generated by v4.0.0 have a different internal structure (no node) compared to v3.x compact IDs, but both are 16 characters and pass validation. The only observable difference is that `extractNode()` returns `null` for all compact IDs in v4.0.0.
 
 ## Migrating from UUID
 

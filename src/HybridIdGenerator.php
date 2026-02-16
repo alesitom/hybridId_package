@@ -49,7 +49,7 @@ final class HybridIdGenerator implements IdGenerator
         Profile|string $profile = Profile::Standard,
         ?string $node = null,
         ?int $maxIdLength = null,
-        bool $requireExplicitNode = false,
+        bool $requireExplicitNode = true,
         ?ProfileRegistryInterface $registry = null,
     ) {
         if (PHP_INT_SIZE < 8) {
@@ -73,13 +73,12 @@ final class HybridIdGenerator implements IdGenerator
                 throw new \InvalidArgumentException('Node must be exactly 2 base62 characters (0-9, A-Z, a-z)');
             }
             $this->node = $node;
+        } elseif ($requireExplicitNode && $this->profileConfig['node'] > 0) {
+            throw new NodeRequiredException(
+                'Explicit node is required (requireExplicitNode is enabled). '
+                . 'Provide a 2-character base62 node identifier via the node parameter or HYBRID_ID_NODE env var.',
+            );
         } else {
-            if ($requireExplicitNode) {
-                throw new NodeRequiredException(
-                    'Explicit node is required (requireExplicitNode is enabled). '
-                    . 'Provide a 2-character base62 node identifier.',
-                );
-            }
             $this->node = self::autoDetectNode();
         }
 
@@ -116,10 +115,16 @@ final class HybridIdGenerator implements IdGenerator
             $requireNode = getenv('HYBRID_ID_REQUIRE_NODE');
         }
 
+        // When HYBRID_ID_REQUIRE_NODE is not set, use the constructor default (true).
+        // Set HYBRID_ID_REQUIRE_NODE=0 to explicitly disable the guard.
+        $requireExplicit = ($requireNode === false || $requireNode === '')
+            ? true
+            : $requireNode !== '0';
+
         return new self(
             profile: $profile,
             node: ($node !== false && $node !== '') ? $node : null,
-            requireExplicitNode: $requireNode !== false && $requireNode !== '' && $requireNode !== '0',
+            requireExplicitNode: $requireExplicit,
             registry: $registry,
         );
     }
@@ -303,7 +308,7 @@ final class HybridIdGenerator implements IdGenerator
      * Returns an array with 'valid' => true and all components for valid IDs,
      * or 'valid' => false with partial data for invalid IDs.
      *
-     * @return array{valid: bool, prefix: ?string, body: ?string, profile?: string, timestamp?: int, datetime?: ?\DateTimeImmutable, node?: string, random?: string}
+     * @return array{valid: bool, prefix: ?string, body: ?string, profile?: string, timestamp?: int, datetime?: ?\DateTimeImmutable, node?: ?string, random?: string}
      */
     public static function parse(string $id): array
     {
@@ -323,6 +328,9 @@ final class HybridIdGenerator implements IdGenerator
             ];
         }
 
+        $config = self::profileConfig($profile);
+        $nodeLen = $config['node'];
+
         $timestamp = self::decodeBase62(substr($body, 0, 8));
         $seconds = intdiv($timestamp, 1000);
         $microseconds = ($timestamp % 1000) * 1000;
@@ -339,8 +347,8 @@ final class HybridIdGenerator implements IdGenerator
             'body' => $body,
             'timestamp' => $timestamp,
             'datetime' => $datetime !== false ? $datetime : null,
-            'node' => substr($body, 8, 2),
-            'random' => substr($body, 10),
+            'node' => $nodeLen > 0 ? substr($body, 8, $nodeLen) : null,
+            'random' => substr($body, 8 + $nodeLen),
         ];
     }
 
@@ -384,15 +392,22 @@ final class HybridIdGenerator implements IdGenerator
     }
 
     /**
-     * Extract the 2-character node identifier from a HybridId (with or without prefix).
+     * Extract the node identifier from a HybridId, or null for node-less profiles (compact).
      */
-    public static function extractNode(string $id): string
+    public static function extractNode(string $id): ?string
     {
         self::assertValid($id);
 
+        $profile = self::detectProfile($id);
+        $config = self::profileConfig($profile);
+
+        if ($config['node'] === 0) {
+            return null;
+        }
+
         $raw = self::stripPrefix($id);
 
-        return substr($raw, 8, 2);
+        return substr($raw, 8, $config['node']);
     }
 
     /**
@@ -593,7 +608,9 @@ final class HybridIdGenerator implements IdGenerator
         // Only update after successful generation to prevent counter desync on failure.
         $this->lastTimestamp = $now;
 
-        $id = $timestamp . $this->node . $random;
+        $id = $config['node'] > 0
+            ? $timestamp . $this->node . $random
+            : $timestamp . $random;
         $fullId = self::applyPrefix($id, $prefix);
 
         if ($this->maxIdLength !== null && strlen($fullId) > $this->maxIdLength) {
@@ -610,20 +627,19 @@ final class HybridIdGenerator implements IdGenerator
     }
 
     /**
-     * Derive a deterministic 2-char node from hostname + PID.
+     * Generate a random 2-char node identifier.
      *
-     * Produces 3,844 possible values (62^2). By the birthday paradox,
-     * 50% collision probability is reached at ~74 distinct host:pid pairs.
-     * For deployments with more than a handful of nodes, set the node explicitly.
+     * Uses cryptographically secure random bytes to produce one of 3,844
+     * possible values (62^2). This is a dev/testing fallback — production
+     * deployments should always set an explicit node to guarantee uniqueness.
+     *
+     * Modulo bias: 65536 % 3844 = 120 → values [0, 119] are ~0.003% more
+     * likely. Negligible for a non-deterministic fallback.
      */
     private static function autoDetectNode(): string
     {
-        $raw = (gethostname() ?: 'unknown') . ':' . getmypid();
-        $hash = crc32($raw) & 0x7FFFFFFF;
-        // 62^2 = 3844 possible values, fitting exactly 2 base62 chars.
-        // Modulo bias: 2^31 % 3844 = 2296 non-zero, so values [0, 2295] have a
-        // 1-in-558659 (~0.00018%) higher probability. Negligible for node hashing.
-        $nodeNum = $hash % 3844;
+        $bytes = random_bytes(2);
+        $nodeNum = (ord($bytes[0]) << 8 | ord($bytes[1])) % 3844;
 
         return self::encodeBase62($nodeNum, 2);
     }
