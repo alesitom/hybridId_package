@@ -1410,6 +1410,14 @@ final class HybridIdGeneratorTest extends TestCase
         HybridIdGenerator::decodeBase62('abc!def');
     }
 
+    public function testDecodeBase62ThrowsOnEmptyString(): void
+    {
+        $this->expectException(InvalidIdException::class);
+        $this->expectExceptionMessage('Cannot decode empty string');
+
+        HybridIdGenerator::decodeBase62('');
+    }
+
     public function testDecodeBase62ThrowsOnOverflow(): void
     {
         $this->expectException(IdOverflowException::class);
@@ -1417,6 +1425,52 @@ final class HybridIdGeneratorTest extends TestCase
 
         // 11 base62 chars max value = 62^11 - 1 > PHP_INT_MAX
         HybridIdGenerator::decodeBase62('zzzzzzzzzzz');
+    }
+
+    public function testDecodeBase62HandlesLeadingZeros(): void
+    {
+        $this->assertSame(0, HybridIdGenerator::decodeBase62('0'));
+        $this->assertSame(0, HybridIdGenerator::decodeBase62('0000000000'));
+        $this->assertSame(0, HybridIdGenerator::decodeBase62('000000000000000'));
+        $this->assertSame(1, HybridIdGenerator::decodeBase62('00001'));
+        $this->assertSame(62, HybridIdGenerator::decodeBase62('00010'));
+    }
+
+    public function testDecodeBase62ThrowsOnExcessiveLength(): void
+    {
+        $this->expectException(IdOverflowException::class);
+        $this->expectExceptionMessage('exceeds 64-bit');
+
+        // 12+ chars always overflows — caught by early length guard
+        HybridIdGenerator::decodeBase62('zzzzzzzzzzzz');
+    }
+
+    public function testDecodeBase62HandlesMaxSafeValue(): void
+    {
+        // Encode PHP_INT_MAX and verify round-trip
+        $encoded = HybridIdGenerator::encodeBase62(PHP_INT_MAX, 11);
+        $decoded = HybridIdGenerator::decodeBase62($encoded);
+
+        $this->assertSame(PHP_INT_MAX, $decoded);
+    }
+
+    public function testDecodeBase62ThrowsOnValueJustAboveIntMax(): void
+    {
+        $this->expectException(IdOverflowException::class);
+
+        // Encode PHP_INT_MAX, then increment last char to force overflow
+        $encoded = HybridIdGenerator::encodeBase62(PHP_INT_MAX, 11);
+        $lastChar = $encoded[10];
+        $nextCharPos = (HybridIdGenerator::decodeBase62($lastChar)) + 1;
+
+        // If last char is 'z' (61), we can't increment — use a known overflow string instead
+        if ($nextCharPos > 61) {
+            // AzL8n0Y58m8 is PHP_INT_MAX in base62; the next representable value overflows
+            HybridIdGenerator::decodeBase62('AzL8n0Y58m9');
+        } else {
+            $overflowStr = substr($encoded, 0, 10) . '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'[$nextCharPos];
+            HybridIdGenerator::decodeBase62($overflowStr);
+        }
     }
 
     public function testEncodeBase62ThrowsOnNegative(): void

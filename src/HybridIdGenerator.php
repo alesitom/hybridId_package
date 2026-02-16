@@ -667,6 +667,19 @@ final class HybridIdGenerator implements IdGenerator
      */
     public static function decodeBase62(string $str): int
     {
+        if ($str === '') {
+            throw new InvalidIdException('Cannot decode empty string');
+        }
+
+        // Early guard: strip leading zeros to count significant digits.
+        // 62^11 > PHP_INT_MAX on 64-bit, so more than 11 significant base62
+        // digits always overflows. Strings of exactly 11 significant chars
+        // may or may not overflow, so the arithmetic check handles those.
+        $significant = ltrim($str, '0');
+        if ($significant !== '' && strlen($significant) > 11) {
+            throw new IdOverflowException('Value exceeds 64-bit integer range');
+        }
+
         $result = 0;
         $len = strlen($str);
 
@@ -677,13 +690,14 @@ final class HybridIdGenerator implements IdGenerator
                 throw new InvalidIdException("Invalid base62 character: {$str[$i]}");
             }
 
-            $next = $result * 62 + $pos;
-
-            if (is_float($next)) {
+            // Check for overflow before performing the operation.
+            // This avoids relying on is_float() which may not catch all
+            // overflow scenarios (e.g. silent wrap to negative on some builds).
+            if ($result > intdiv(PHP_INT_MAX - $pos, 62)) {
                 throw new IdOverflowException('Value exceeds 64-bit integer range');
             }
 
-            $result = $next;
+            $result = $result * 62 + $pos;
         }
 
         return $result;
