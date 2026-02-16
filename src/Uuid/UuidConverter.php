@@ -1,0 +1,263 @@
+<?php
+
+declare(strict_types=1);
+
+namespace HybridId\Uuid;
+
+use HybridId\Exception\InvalidIdException;
+use HybridId\Exception\InvalidProfileException;
+use HybridId\HybridIdGenerator;
+use HybridId\Profile;
+
+final class UuidConverter
+{
+    private function __construct() {}
+
+    // -------------------------------------------------------------------------
+    // UUIDv8 (RFC 9562 — lossless for compact/standard)
+    // -------------------------------------------------------------------------
+
+    public static function toUUIDv8(string $hybridId): string
+    {
+        $parsed = HybridIdGenerator::parse($hybridId);
+        if (!$parsed['valid']) {
+            throw new InvalidIdException('Invalid HybridId: cannot convert to UUIDv8');
+        }
+
+        $profileIndex = match ($parsed['profile']) {
+            'compact' => 0,
+            'standard' => 1,
+            default => throw new InvalidProfileException(
+                sprintf('Profile "%s" cannot be losslessly packed into UUIDv8 (max 60 random bits)', $parsed['profile']),
+            ),
+        };
+
+        $timestamp = $parsed['timestamp'];
+        $nodeValue = HybridIdGenerator::decodeBase62($parsed['node']);
+        $randomValue = HybridIdGenerator::decodeBase62($parsed['random']);
+
+        // custom_c: [2-bit profile index][60-bit random]
+        $customC = ($profileIndex << 60) | ($randomValue & 0x0FFFFFFFFFFFFFFF);
+
+        // Build 32-char hex string
+        $hex = sprintf('%012x', $timestamp);                              // custom_a: 48 bits
+        $hex .= '8';                                                       // version: 1000
+        $hex .= sprintf('%03x', $nodeValue);                               // custom_b: 12 bits
+
+        $variantAndHigh = (0b10 << 2) | (($customC >> 60) & 0x3);
+        $hex .= sprintf('%x', $variantAndHigh);                            // variant(2) + high(2)
+
+        $hex .= sprintf('%015x', $customC & 0x0FFFFFFFFFFFFFFF);           // low 60 bits
+
+        return self::insertHyphens($hex);
+    }
+
+    public static function fromUUIDv8(string $uuid): string
+    {
+        self::assertUuidFormat($uuid, 8);
+
+        $hex = self::stripHyphens($uuid);
+
+        $timestamp = self::safeHexdec(substr($hex, 0, 12));
+        $nodeValue = self::safeHexdec(substr($hex, 13, 3));
+
+        // Reconstruct custom_c (62 bits)
+        $high2 = hexdec(substr($hex, 16, 1)) & 0x3;
+        $low60 = self::safeHexdec(substr($hex, 17, 15));
+        $customC = ($high2 << 60) | $low60;
+
+        $profileIndex = ($customC >> 60) & 0x3;
+        $randomValue = $customC & 0x0FFFFFFFFFFFFFFF;
+
+        $profile = match ($profileIndex) {
+            0 => 'compact',
+            1 => 'standard',
+            default => throw new InvalidIdException('Unrecognized profile index in UUIDv8'),
+        };
+
+        $config = HybridIdGenerator::profileConfig($profile);
+
+        $tsChars = HybridIdGenerator::encodeBase62($timestamp, 8);
+        $nodeChars = HybridIdGenerator::encodeBase62($nodeValue, 2);
+        $randomChars = HybridIdGenerator::encodeBase62($randomValue, $config['random']);
+
+        return $tsChars . $nodeChars . $randomChars;
+    }
+
+    // -------------------------------------------------------------------------
+    // UUIDv7 (timestamp-preserving)
+    // -------------------------------------------------------------------------
+
+    public static function toUUIDv7(string $hybridId): string
+    {
+        $parsed = HybridIdGenerator::parse($hybridId);
+        if (!$parsed['valid']) {
+            throw new InvalidIdException('Invalid HybridId: cannot convert to UUIDv7');
+        }
+
+        self::assertSupportedProfile($parsed['profile'], 'toUUIDv7');
+
+        $timestamp = $parsed['timestamp'];
+        $nodeValue = HybridIdGenerator::decodeBase62($parsed['node']);
+        $randomValue = HybridIdGenerator::decodeBase62($parsed['random']);
+
+        $hex = sprintf('%012x', $timestamp);
+        $hex .= '7';
+        $hex .= sprintf('%03x', $nodeValue);
+
+        $variantAndHigh = (0b10 << 2) | (($randomValue >> 58) & 0x3);
+        $hex .= sprintf('%x', $variantAndHigh);
+
+        $hex .= sprintf('%015x', $randomValue & 0x03FFFFFFFFFFFFFF);
+
+        return self::insertHyphens($hex);
+    }
+
+    public static function fromUUIDv7(string $uuid, Profile|string $profile = Profile::Standard): string
+    {
+        self::assertUuidFormat($uuid, 7);
+
+        $profileName = $profile instanceof Profile ? $profile->value : $profile;
+        $hex = self::stripHyphens($uuid);
+
+        $timestamp = self::safeHexdec(substr($hex, 0, 12));
+        $nodeValue = self::safeHexdec(substr($hex, 13, 3));
+
+        $high2 = hexdec(substr($hex, 16, 1)) & 0x3;
+        $low58 = self::safeHexdec(substr($hex, 17, 15));
+        $randomValue = ($high2 << 58) | $low58;
+
+        $config = HybridIdGenerator::profileConfig($profileName);
+
+        $tsChars = HybridIdGenerator::encodeBase62($timestamp, 8);
+        $nodeChars = HybridIdGenerator::encodeBase62($nodeValue, 2);
+        $randomChars = HybridIdGenerator::encodeBase62($randomValue, $config['random']);
+
+        return $tsChars . $nodeChars . $randomChars;
+    }
+
+    // -------------------------------------------------------------------------
+    // UUIDv4 (lossy both directions)
+    // -------------------------------------------------------------------------
+
+    public static function toUUIDv4(string $hybridId): string
+    {
+        $parsed = HybridIdGenerator::parse($hybridId);
+        if (!$parsed['valid']) {
+            throw new InvalidIdException('Invalid HybridId: cannot convert to UUIDv4');
+        }
+
+        self::assertSupportedProfile($parsed['profile'], 'toUUIDv4');
+
+        $timestamp = $parsed['timestamp'];
+        $nodeValue = HybridIdGenerator::decodeBase62($parsed['node']);
+        $randomValue = HybridIdGenerator::decodeBase62($parsed['random']);
+
+        $hex = sprintf('%012x', $timestamp);
+        $hex .= '4';
+        $hex .= sprintf('%03x', $nodeValue);
+
+        $variantAndHigh = (0b10 << 2) | (($randomValue >> 58) & 0x3);
+        $hex .= sprintf('%x', $variantAndHigh);
+
+        $hex .= sprintf('%015x', $randomValue & 0x03FFFFFFFFFFFFFF);
+
+        return self::insertHyphens($hex);
+    }
+
+    public static function fromUUIDv4(
+        string $uuid,
+        Profile|string $profile = Profile::Standard,
+        ?int $timestampMs = null,
+        ?string $node = null,
+    ): string {
+        self::assertUuidFormat($uuid, 4);
+
+        $profileName = $profile instanceof Profile ? $profile->value : $profile;
+        $hex = self::stripHyphens($uuid);
+        $config = HybridIdGenerator::profileConfig($profileName);
+
+        $timestamp = $timestampMs ?? (int) (microtime(true) * 1000);
+
+        if ($node !== null) {
+            if (strlen($node) !== 2 || strspn($node, '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz') !== 2) {
+                throw new InvalidIdException('Node must be exactly 2 base62 characters');
+            }
+            $nodeChars = $node;
+        } else {
+            $nodeValue = self::safeHexdec(substr($hex, 13, 3));
+            $nodeChars = HybridIdGenerator::encodeBase62($nodeValue, 2);
+        }
+
+        $high2 = hexdec(substr($hex, 16, 1)) & 0x3;
+        $low58 = self::safeHexdec(substr($hex, 17, 15));
+        $randomValue = ($high2 << 58) | $low58;
+
+        $tsChars = HybridIdGenerator::encodeBase62($timestamp, 8);
+        $randomChars = HybridIdGenerator::encodeBase62($randomValue, $config['random']);
+
+        return $tsChars . $nodeChars . $randomChars;
+    }
+
+    // -------------------------------------------------------------------------
+    // Private helpers
+    // -------------------------------------------------------------------------
+
+    private static function assertUuidFormat(string $uuid, int $expectedVersion): void
+    {
+        $pattern = '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i';
+        if (preg_match($pattern, $uuid) !== 1) {
+            throw new InvalidIdException('Invalid UUID format');
+        }
+
+        $hex = self::stripHyphens($uuid);
+
+        $version = hexdec($hex[12]);
+        if ($version !== $expectedVersion) {
+            throw new InvalidIdException(
+                sprintf('Expected UUID version %d, got %d', $expectedVersion, $version),
+            );
+        }
+
+        $variantNibble = hexdec($hex[16]);
+        if (($variantNibble >> 2) !== 0b10) {
+            throw new InvalidIdException('Invalid UUID variant: expected RFC 4122 variant (10xx)');
+        }
+    }
+
+    private static function assertSupportedProfile(string $profile, string $method): void
+    {
+        if ($profile !== 'compact' && $profile !== 'standard') {
+            throw new InvalidProfileException(
+                sprintf(
+                    '%s() only supports compact and standard profiles (got "%s")',
+                    $method,
+                    $profile,
+                ),
+            );
+        }
+    }
+
+    private static function insertHyphens(string $hex32): string
+    {
+        return substr($hex32, 0, 8) . '-'
+            . substr($hex32, 8, 4) . '-'
+            . substr($hex32, 12, 4) . '-'
+            . substr($hex32, 16, 4) . '-'
+            . substr($hex32, 20, 12);
+    }
+
+    private static function stripHyphens(string $uuid): string
+    {
+        return strtolower(str_replace('-', '', $uuid));
+    }
+
+    private static function safeHexdec(string $hex): int
+    {
+        $result = hexdec($hex);
+        if (is_float($result)) {
+            throw new InvalidIdException('Hex value exceeds 64-bit integer range');
+        }
+        return $result;
+    }
+}
