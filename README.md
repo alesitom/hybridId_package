@@ -22,7 +22,7 @@ Compact, time-sortable unique ID generator for PHP. A space-efficient alternativ
 composer require alesitom/hybrid-id
 ```
 
-Requires PHP >= 8.3 (64-bit). No external dependencies.
+Requires PHP 8.3, 8.4, or 8.5 (64-bit). No external dependencies.
 
 ## Quick Start
 
@@ -686,7 +686,8 @@ class Order
 
 ## Requirements
 
-- PHP >= 8.3 (64-bit)
+- PHP 8.3, 8.4, or 8.5 (64-bit)
+- Tested on all three versions via CI
 - No external dependencies
 
 ## License
