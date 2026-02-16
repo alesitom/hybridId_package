@@ -115,6 +115,7 @@ Reads from:
 HYBRID_ID_PROFILE=standard
 HYBRID_ID_NODE=A1
 HYBRID_ID_REQUIRE_NODE=1    # Default is true; set to 0 to disable
+HYBRID_ID_BLIND=1            # Optional: enable blind mode (HMAC-hashed timestamps)
 ```
 
 For `.env` file support, install [vlucas/phpdotenv](https://github.com/vlucas/phpdotenv):
@@ -544,9 +545,52 @@ These return synthetic boundary IDs (all-zero or all-max node+random) suitable f
 
 **Not for secrets.** Do NOT use HybridId for security tokens, password resets, API keys, or session tokens. The timestamp is predictable and reduces effective entropy. Use `random_bytes()` with 128+ bits of pure entropy for those.
 
-**Timestamp disclosure.** The first 8 characters encode the creation time to the millisecond. Anyone with a HybridId can extract when it was created and which node generated it. This is inherent to the design (same as UUID v7). Do not use HybridId where creation time must be confidential.
+**Timestamp disclosure.** The first 8 characters encode the creation time to the millisecond. Anyone with a HybridId can extract when it was created and which node generated it. This is inherent to the design (same as UUID v7). If creation time must be confidential, use **blind mode** (see below).
 
 **Validation is not constant-time.** `isValid()` returns early on the first invalid character. If you compare HybridIds in security-sensitive contexts (e.g., authorization), use `hash_equals()` instead of `===` to prevent timing side-channels.
+
+## Blind Mode
+
+Blind mode HMAC-hashes the timestamp and node portions with a per-instance secret, making the creation time and generating node unextractable from the ID. The output has the **same length and format** as regular IDs — an external observer cannot tell if an ID is blind or not.
+
+```php
+// Blind standard — 20 chars, timestamp+node are HMAC'd
+$gen = new HybridIdGenerator(node: 'A1', blind: true);
+$id = $gen->generate('usr');  // usr_<opaque20chars>
+
+// Blind compact — 16 chars, timestamp is HMAC'd
+$gen = new HybridIdGenerator(profile: 'compact', blind: true);
+
+// Blind bypasses requireExplicitNode — the per-instance secret differentiates instances
+$gen = new HybridIdGenerator(blind: true);  // OK, no throw
+
+// Via environment variable
+// HYBRID_ID_BLIND=1
+$gen = HybridIdGenerator::fromEnv();
+```
+
+**What works:**
+- Same length and validation as non-blind IDs
+- `isValid()`, `detectProfile()`, `validate()` — all work normally
+- Prefixes, batch generation, profile methods (`compact()`, `standard()`, `extended()`)
+- Monotonic guard still ensures unique HMAC inputs per instance
+
+**What changes:**
+- `extractTimestamp()` returns an opaque value (valid int, but not the real creation time)
+- `extractNode()` returns opaque characters (not the real node)
+- `compare()` sorts by HMAC output, not chronologically
+- `minForTimestamp()` / `maxForTimestamp()` produce boundaries that don't match blind IDs
+- UUID round-trip (`UuidConverter`) is not meaningful for blind IDs
+
+**When to use:** User-facing IDs where creation time disclosure is a concern (e.g., registration timing, order frequency patterns).
+
+**Still not for secrets.** Blind mode does not increase entropy — it only hides the timestamp. Do not use blind IDs as security tokens, API keys, or session identifiers.
+
+```bash
+# CLI
+./vendor/bin/hybrid-id generate --blind
+./vendor/bin/hybrid-id generate --blind -p compact -n 5
+```
 
 ## Clock Drift Protection
 
@@ -612,6 +656,10 @@ The auto-detected node is no longer deterministic. Each instance gets a differen
 **4. `decodeBase62()` overflow detection fixed.**
 
 The internal `decodeBase62()` method now uses arithmetic bounds checking instead of the unreliable `is_float()` check. This prevents silent overflow on values exceeding `PHP_INT_MAX`.
+
+**5. New: Blind mode.**
+
+`blind: true` constructor flag HMAC-hashes the timestamp+node portion, making creation time unextractable. See the "Blind Mode" section for details.
 
 ### From v2.x to v3.0.0
 

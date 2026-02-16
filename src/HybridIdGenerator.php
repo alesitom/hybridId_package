@@ -43,6 +43,8 @@ final class HybridIdGenerator implements IdGenerator
     private readonly array $profileConfig;
     private readonly string $node;
     private readonly ?int $maxIdLength;
+    private readonly bool $blind;
+    private readonly ?string $blindSecret;
     private int $lastTimestamp = 0;
 
     public function __construct(
@@ -51,6 +53,7 @@ final class HybridIdGenerator implements IdGenerator
         ?int $maxIdLength = null,
         bool $requireExplicitNode = true,
         ?ProfileRegistryInterface $registry = null,
+        bool $blind = false,
     ) {
         if (PHP_INT_SIZE < 8) {
             throw new \RuntimeException('HybridId requires 64-bit PHP');
@@ -67,12 +70,17 @@ final class HybridIdGenerator implements IdGenerator
         }
         $this->profile = $profileName;
         $this->profileConfig = $config;
+        $this->blind = $blind;
+        $this->blindSecret = $blind ? random_bytes(32) : null;
 
         if ($node !== null) {
             if (strlen($node) !== 2 || !self::isBase62String($node)) {
                 throw new \InvalidArgumentException('Node must be exactly 2 base62 characters (0-9, A-Z, a-z)');
             }
             $this->node = $node;
+        } elseif ($blind) {
+            // Blind mode: node is only used as HMAC input, secret differentiates instances
+            $this->node = self::autoDetectNode();
         } elseif ($requireExplicitNode && $this->profileConfig['node'] > 0) {
             throw new NodeRequiredException(
                 'Explicit node is required (requireExplicitNode is enabled). '
@@ -121,11 +129,18 @@ final class HybridIdGenerator implements IdGenerator
             ? true
             : $requireNode !== '0';
 
+        $blindEnv = getenv('HYBRID_ID_BLIND', true);
+        if ($blindEnv === false) {
+            $blindEnv = getenv('HYBRID_ID_BLIND');
+        }
+        $blind = ($blindEnv !== false && $blindEnv !== '' && $blindEnv !== '0');
+
         return new self(
             profile: $profile,
             node: ($node !== false && $node !== '') ? $node : null,
             requireExplicitNode: $requireExplicit,
             registry: $registry,
+            blind: $blind,
         );
     }
 
@@ -214,6 +229,11 @@ final class HybridIdGenerator implements IdGenerator
     public function getMaxIdLength(): ?int
     {
         return $this->maxIdLength;
+    }
+
+    public function isBlind(): bool
+    {
+        return $this->blind;
     }
 
     // -------------------------------------------------------------------------
@@ -602,15 +622,24 @@ final class HybridIdGenerator implements IdGenerator
             $now = $this->lastTimestamp + 1;
         }
 
-        $timestamp = self::encodeBase62($now, $config['ts']);
         $random = self::randomBase62($config['random']);
+
+        if ($this->blind) {
+            $hmacInput = pack('J', $now) . ($config['node'] > 0 ? $this->node : '');
+            $hmacHex = hash_hmac('sha256', $hmacInput, $this->blindSecret);
+            $opaqueLen = $config['ts'] + $config['node'];
+            $hmacValue = hexdec(substr($hmacHex, 0, 15)) % (62 ** $opaqueLen);
+            $opaquePrefix = self::encodeBase62($hmacValue, $opaqueLen);
+            $id = $opaquePrefix . $random;
+        } else {
+            $timestamp = self::encodeBase62($now, $config['ts']);
+            $id = $config['node'] > 0
+                ? $timestamp . $this->node . $random
+                : $timestamp . $random;
+        }
 
         // Only update after successful generation to prevent counter desync on failure.
         $this->lastTimestamp = $now;
-
-        $id = $config['node'] > 0
-            ? $timestamp . $this->node . $random
-            : $timestamp . $random;
         $fullId = self::applyPrefix($id, $prefix);
 
         if ($this->maxIdLength !== null && strlen($fullId) > $this->maxIdLength) {

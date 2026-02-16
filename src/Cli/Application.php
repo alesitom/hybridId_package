@@ -41,6 +41,7 @@ final class Application
         $count = 1;
         $node = null;
         $prefix = null;
+        $blind = false;
 
         for ($i = 0, $len = count($args); $i < $len; $i++) {
             switch ($args[$i]) {
@@ -79,6 +80,9 @@ final class Application
                     }
                     $prefix = $args[++$i];
                     break;
+                case '--blind':
+                    $blind = true;
+                    break;
                 default:
                     $this->output->error(
                         str_starts_with($args[$i], '-')
@@ -99,7 +103,7 @@ final class Application
         }
 
         try {
-            $gen = new HybridIdGenerator(profile: $profile, node: $node, requireExplicitNode: false);
+            $gen = new HybridIdGenerator(profile: $profile, node: $node, requireExplicitNode: false, blind: $blind);
         } catch (\InvalidArgumentException $e) {
             $this->output->error(self::sanitize($e->getMessage()));
             return 1;
