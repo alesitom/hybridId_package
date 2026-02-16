@@ -802,12 +802,29 @@ final class HybridIdGeneratorTest extends TestCase
         $this->assertSame(-1, HybridIdGenerator::compare($earlier, $later));
     }
 
-    public function testCompareEqualTimestampsReturnsZero(): void
+    public function testCompareIdenticalIdReturnsZero(): void
     {
         $gen = new HybridIdGenerator();
         $id = $gen->generate();
 
         $this->assertSame(0, HybridIdGenerator::compare($id, $id));
+    }
+
+    public function testCompareSameTimestampDistinctIdsReturnsNonZero(): void
+    {
+        // Generate many IDs rapidly — monotonic guard increments timestamps,
+        // but different random portions ensure distinct IDs
+        $gen = new HybridIdGenerator();
+        $ids = [];
+        for ($i = 0; $i < 10; $i++) {
+            $ids[] = $gen->generate();
+        }
+
+        // All consecutive pairs should be distinct and ordered
+        for ($i = 1; $i < count($ids); $i++) {
+            $this->assertNotSame(0, HybridIdGenerator::compare($ids[$i - 1], $ids[$i]));
+            $this->assertSame(-1, HybridIdGenerator::compare($ids[$i - 1], $ids[$i]));
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -1368,5 +1385,176 @@ final class HybridIdGeneratorTest extends TestCase
 
         $result = $method->invoke(null, 0, 8);
         $this->assertSame('00000000', $result);
+    }
+
+    // -------------------------------------------------------------------------
+    // Temporal range helpers (#102)
+    // -------------------------------------------------------------------------
+
+    public function testMinForTimestampReturnsCorrectLength(): void
+    {
+        $ts = (int) (microtime(true) * 1000);
+
+        $this->assertSame(16, strlen(HybridIdGenerator::minForTimestamp($ts, 'compact')));
+        $this->assertSame(20, strlen(HybridIdGenerator::minForTimestamp($ts, 'standard')));
+        $this->assertSame(24, strlen(HybridIdGenerator::minForTimestamp($ts, 'extended')));
+    }
+
+    public function testMaxForTimestampReturnsCorrectLength(): void
+    {
+        $ts = (int) (microtime(true) * 1000);
+
+        $this->assertSame(16, strlen(HybridIdGenerator::maxForTimestamp($ts, 'compact')));
+        $this->assertSame(20, strlen(HybridIdGenerator::maxForTimestamp($ts, 'standard')));
+        $this->assertSame(24, strlen(HybridIdGenerator::maxForTimestamp($ts, 'extended')));
+    }
+
+    public function testMinForTimestampIsLowerBound(): void
+    {
+        $gen = new HybridIdGenerator();
+        $id = $gen->generate();
+        $ts = HybridIdGenerator::extractTimestamp($id);
+
+        $min = HybridIdGenerator::minForTimestamp($ts);
+
+        $this->assertLessThanOrEqual(0, strcmp($min, HybridIdGenerator::extractPrefix($id) !== null ? substr($id, strpos($id, '_') + 1) : $id));
+    }
+
+    public function testMaxForTimestampIsUpperBound(): void
+    {
+        $gen = new HybridIdGenerator();
+        $id = $gen->generate();
+        $ts = HybridIdGenerator::extractTimestamp($id);
+        $body = $id; // unprefixed
+
+        $max = HybridIdGenerator::maxForTimestamp($ts);
+
+        $this->assertGreaterThanOrEqual(0, strcmp($max, $body));
+    }
+
+    public function testRangeHelpersBracketGeneratedIds(): void
+    {
+        $gen = new HybridIdGenerator();
+
+        $before = (int) (microtime(true) * 1000);
+        $ids = [];
+        for ($i = 0; $i < 10; $i++) {
+            $ids[] = $gen->generate();
+        }
+        $after = (int) (microtime(true) * 1000) + 100; // generous upper bound
+
+        $min = HybridIdGenerator::minForTimestamp($before);
+        $max = HybridIdGenerator::maxForTimestamp($after);
+
+        foreach ($ids as $id) {
+            $this->assertGreaterThanOrEqual(0, strcmp($id, $min), "ID should be >= min boundary");
+            $this->assertLessThanOrEqual(0, strcmp($id, $max), "ID should be <= max boundary");
+        }
+    }
+
+    public function testMinForTimestampEndsWithZeros(): void
+    {
+        $ts = (int) (microtime(true) * 1000);
+        $min = HybridIdGenerator::minForTimestamp($ts, 'standard');
+
+        // Node + random portion (chars 8-19) should all be '0'
+        $this->assertSame(str_repeat('0', 12), substr($min, 8));
+    }
+
+    public function testMaxForTimestampEndsWithZ(): void
+    {
+        $ts = (int) (microtime(true) * 1000);
+        $max = HybridIdGenerator::maxForTimestamp($ts, 'standard');
+
+        // Node + random portion (chars 8-19) should all be 'z'
+        $this->assertSame(str_repeat('z', 12), substr($max, 8));
+    }
+
+    public function testRangeHelpersRejectInvalidProfile(): void
+    {
+        $ts = (int) (microtime(true) * 1000);
+
+        $this->expectException(\InvalidArgumentException::class);
+        HybridIdGenerator::minForTimestamp($ts, 'nonexistent');
+    }
+
+    // -------------------------------------------------------------------------
+    // Production node guard (#103)
+    // -------------------------------------------------------------------------
+
+    public function testRequireExplicitNodeThrowsWhenNodeMissing(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Explicit node is required');
+
+        new HybridIdGenerator(requireExplicitNode: true);
+    }
+
+    public function testRequireExplicitNodeAcceptsExplicitNode(): void
+    {
+        $gen = new HybridIdGenerator(node: 'A1', requireExplicitNode: true);
+
+        $this->assertSame('A1', $gen->getNode());
+    }
+
+    public function testRequireExplicitNodeDefaultIsFalse(): void
+    {
+        // Should not throw — auto-detection is allowed by default
+        $gen = new HybridIdGenerator();
+
+        $this->assertSame(2, strlen($gen->getNode()));
+    }
+
+    public function testFromEnvReadsRequireNode(): void
+    {
+        try {
+            putenv('HYBRID_ID_PROFILE=');
+            putenv('HYBRID_ID_NODE=');
+            putenv('HYBRID_ID_REQUIRE_NODE=1');
+
+            $this->expectException(\InvalidArgumentException::class);
+            $this->expectExceptionMessage('Explicit node is required');
+
+            HybridIdGenerator::fromEnv();
+        } finally {
+            putenv('HYBRID_ID_PROFILE');
+            putenv('HYBRID_ID_NODE');
+            putenv('HYBRID_ID_REQUIRE_NODE');
+        }
+    }
+
+    public function testFromEnvRequireNodeWithExplicitNode(): void
+    {
+        try {
+            putenv('HYBRID_ID_PROFILE=');
+            putenv('HYBRID_ID_NODE=Z9');
+            putenv('HYBRID_ID_REQUIRE_NODE=1');
+
+            $gen = HybridIdGenerator::fromEnv();
+
+            $this->assertSame('Z9', $gen->getNode());
+        } finally {
+            putenv('HYBRID_ID_PROFILE');
+            putenv('HYBRID_ID_NODE');
+            putenv('HYBRID_ID_REQUIRE_NODE');
+        }
+    }
+
+    public function testFromEnvRequireNodeZeroIsDisabled(): void
+    {
+        try {
+            putenv('HYBRID_ID_PROFILE=');
+            putenv('HYBRID_ID_NODE=');
+            putenv('HYBRID_ID_REQUIRE_NODE=0');
+
+            // Should not throw — '0' means disabled
+            $gen = HybridIdGenerator::fromEnv();
+
+            $this->assertSame(2, strlen($gen->getNode()));
+        } finally {
+            putenv('HYBRID_ID_PROFILE');
+            putenv('HYBRID_ID_NODE');
+            putenv('HYBRID_ID_REQUIRE_NODE');
+        }
     }
 }
