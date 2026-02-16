@@ -349,6 +349,20 @@ final class ApplicationTest extends TestCase
         $this->assertStringNotContainsString("\033", $output->getErrors()[0]);
     }
 
+    public function testSanitizesTruncatesLongInput(): void
+    {
+        $output = new BufferedOutput();
+        $app = new Application($output);
+
+        $longInput = str_repeat('x', 500);
+        $exitCode = $app->run(['hybrid-id', 'inspect', $longInput]);
+
+        $this->assertSame(1, $exitCode);
+        // Error message should contain the truncated input (256 chars max)
+        $error = $output->getErrors()[0];
+        $this->assertStringNotContainsString(str_repeat('x', 257), $error);
+    }
+
     public function testSanitizesNullBytes(): void
     {
         $output = new BufferedOutput();

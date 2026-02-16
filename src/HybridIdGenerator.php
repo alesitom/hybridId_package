@@ -37,6 +37,12 @@ final class HybridIdGenerator implements IdGenerator
     private const string PREFIX_SEPARATOR = '_';
     private const int PREFIX_MAX_LENGTH = 8;
 
+    /**
+     * Maximum possible ID length: PREFIX_MAX_LENGTH (8) + separator (1) + max body (138).
+     * Max body = 8 ts + 2 node + 128 random (registerProfile limit).
+     */
+    private const int MAX_ID_LENGTH = 147;
+
     /** @var array<string, array{length: int, ts: int, node: int, random: int}> */
     private static array $customProfiles = [];
 
@@ -44,6 +50,8 @@ final class HybridIdGenerator implements IdGenerator
     private static array $customLengthToProfile = [];
 
     private readonly string $profile;
+    /** @var array{length: int, ts: int, node: int, random: int} */
+    private readonly array $profileConfig;
     private readonly string $node;
     private readonly ?int $maxIdLength;
     private int $lastTimestamp = 0;
@@ -57,7 +65,8 @@ final class HybridIdGenerator implements IdGenerator
             throw new \RuntimeException('HybridId requires 64-bit PHP');
         }
 
-        if (self::resolveProfile($profile) === null) {
+        $config = self::resolveProfile($profile);
+        if ($config === null) {
             throw new \InvalidArgumentException(
                 sprintf(
                     'Invalid profile "%s". Valid profiles: %s',
@@ -67,6 +76,7 @@ final class HybridIdGenerator implements IdGenerator
             );
         }
         $this->profile = $profile;
+        $this->profileConfig = $config;
 
         if ($node !== null) {
             if (strlen($node) !== 2 || !self::isBase62String($node)) {
@@ -78,13 +88,12 @@ final class HybridIdGenerator implements IdGenerator
         }
 
         if ($maxIdLength !== null) {
-            $bodyLength = self::resolveProfile($this->profile)['length'];
-            if ($maxIdLength < $bodyLength) {
+            if ($maxIdLength < $this->profileConfig['length']) {
                 throw new \InvalidArgumentException(
                     sprintf(
                         'maxIdLength (%d) must be >= body length (%d) for profile "%s"',
                         $maxIdLength,
-                        $bodyLength,
+                        $this->profileConfig['length'],
                         $this->profile,
                     ),
                 );
@@ -168,7 +177,7 @@ final class HybridIdGenerator implements IdGenerator
      */
     public function bodyLength(): int
     {
-        return self::resolveProfile($this->profile)['length'];
+        return $this->profileConfig['length'];
     }
 
     public function getMaxIdLength(): ?int
@@ -192,7 +201,7 @@ final class HybridIdGenerator implements IdGenerator
     public function validate(string $id, ?string $expectedPrefix = null): bool
     {
         // Early guards
-        if ($id === '' || strlen($id) > 147) {
+        if ($id === '' || strlen($id) > self::MAX_ID_LENGTH) {
             return false;
         }
 
@@ -202,9 +211,8 @@ final class HybridIdGenerator implements IdGenerator
 
         // Strip prefix and check body length against THIS profile
         $body = self::stripPrefix($id);
-        $config = self::resolveProfile($this->profile);
 
-        if (strlen($body) !== $config['length']) {
+        if (strlen($body) !== $this->profileConfig['length']) {
             return false;
         }
 
@@ -219,12 +227,8 @@ final class HybridIdGenerator implements IdGenerator
             return $prefix === $expectedPrefix;
         }
 
-        // If has prefix, validate its format
-        if ($prefix !== null) {
-            if (strlen($prefix) > self::PREFIX_MAX_LENGTH
-                || !preg_match('/^[a-z][a-z0-9]*$/', $prefix)) {
-                return false;
-            }
+        if ($prefix !== null && !self::isValidPrefix($prefix)) {
+            return false;
         }
 
         return true;
@@ -276,7 +280,7 @@ final class HybridIdGenerator implements IdGenerator
      */
     public static function parse(string $id): array
     {
-        if ($id === '' || strlen($id) > 147 || !preg_match('/^[a-zA-Z0-9_]+$/', $id)) {
+        if ($id === '' || strlen($id) > self::MAX_ID_LENGTH || !preg_match('/^[a-zA-Z0-9_]+$/', $id)) {
             return ['valid' => false, 'prefix' => null, 'body' => null];
         }
 
@@ -391,11 +395,8 @@ final class HybridIdGenerator implements IdGenerator
         if ($raw !== $id && $prefix === null) {
             return null;
         }
-        if ($prefix !== null) {
-            if (strlen($prefix) > self::PREFIX_MAX_LENGTH
-                || !preg_match('/^[a-z][a-z0-9]*$/', $prefix)) {
-                return null;
-            }
+        if ($prefix !== null && !self::isValidPrefix($prefix)) {
+            return null;
         }
 
         $profile = self::resolveProfileByLength(strlen($raw));
@@ -456,6 +457,11 @@ final class HybridIdGenerator implements IdGenerator
      *
      * Timestamp (8) and node (2) are fixed — only random is configurable.
      * Total length = 10 + random.
+     *
+     * @note Call during application bootstrap only, before creating any
+     *       generator instances. The profile registry is global (static) and
+     *       mutations after generators are constructed will not affect
+     *       existing instances' cached configuration.
      */
     public static function registerProfile(string $name, int $random): void
     {
@@ -532,12 +538,16 @@ final class HybridIdGenerator implements IdGenerator
 
     private function generateWithProfile(string $profile, ?string $prefix): string
     {
-        $config = self::resolveProfile($profile);
+        $config = $profile === $this->profile ? $this->profileConfig : self::resolveProfile($profile);
 
         $now = (int) (microtime(true) * 1000);
 
         // Monotonic guard: if clock drifts backward or same ms, increment to guarantee
         // strict ordering and eliminate intra-millisecond collision on the timestamp portion.
+        // Note: this does not cap forward drift. If the system clock jumps ahead and then
+        // corrects, the guard holds the inflated timestamp until wall-clock time catches up.
+        // This preserves ordering guarantees at the cost of timestamps appearing ahead of
+        // real time during the catch-up window.
         if ($now <= $this->lastTimestamp) {
             $now = $this->lastTimestamp + 1;
         }
@@ -676,10 +686,16 @@ final class HybridIdGenerator implements IdGenerator
         return $prefix . self::PREFIX_SEPARATOR . $id;
     }
 
+    private static function isValidPrefix(string $prefix): bool
+    {
+        return $prefix !== ''
+            && strlen($prefix) <= self::PREFIX_MAX_LENGTH
+            && preg_match('/^[a-z][a-z0-9]*$/', $prefix) === 1;
+    }
+
     private static function validatePrefix(string $prefix): void
     {
-        if ($prefix === '' || strlen($prefix) > self::PREFIX_MAX_LENGTH
-            || !preg_match('/^[a-z][a-z0-9]*$/', $prefix)) {
+        if (!self::isValidPrefix($prefix)) {
             throw new \InvalidArgumentException(
                 sprintf(
                     'Prefix must be 1-%d lowercase alphanumeric characters, starting with a letter',
