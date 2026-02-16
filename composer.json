@@ -1,9 +1,9 @@
 {
     "name": "alesitom/hybrid-id",
-    "description": "Compact, time-sortable unique ID generator. A space-efficient alternative to UUID with configurable entropy profiles.",
+    "description": "Compact, time-sortable unique ID generator for PHP. Drop-in UUID/ULID alternative with base62 encoding, Stripe-style prefixes, and configurable entropy profiles.",
     "type": "library",
     "license": "MIT",
-    "keywords": ["uuid", "id", "unique-id", "base62", "sortable", "compact"],
+    "keywords": ["uuid", "ulid", "id", "unique-id", "base62", "sortable", "compact", "time-sortable", "snowflake", "prefix", "stripe"],
     "authors": [
         {
             "name": "alesitom"
@@ -27,7 +27,9 @@
     },
     "bin": ["bin/hybrid-id"],
     "suggest": {
-        "vlucas/phpdotenv": "Load HYBRID_ID_PROFILE and HYBRID_ID_NODE from .env files (^5.6)"
+        "vlucas/phpdotenv": "Load HYBRID_ID_PROFILE and HYBRID_ID_NODE from .env files (^5.6)",
+        "alesitom/hybrid-id-laravel": "Laravel integration — Eloquent trait, service provider, and config",
+        "alesitom/hybrid-id-doctrine": "Doctrine integration — DBAL type and ORM ID generator"
     },
     "minimum-stability": "stable",
     "config": {
