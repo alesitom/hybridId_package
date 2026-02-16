@@ -3,6 +3,10 @@
 
 declare(strict_types=1);
 
+if (php_sapi_name() !== 'cli') {
+    exit(1);
+}
+
 // Autoload: prefer composer, fallback to direct require
 $autoloadPaths = [
     __DIR__ . '/../vendor/autoload.php',
@@ -19,198 +23,11 @@ foreach ($autoloadPaths as $path) {
 }
 
 if (!$loaded) {
-    require __DIR__ . '/../src/IdGenerator.php';
-    require __DIR__ . '/../src/HybridIdGenerator.php';
+    fwrite(STDERR, 'Composer autoloader not found. Run "composer install" first.' . PHP_EOL);
+    exit(1);
 }
 
-use HybridId\HybridIdGenerator;
+use HybridId\Cli\Application;
 
-// ---------------------------------------------------------------------------
-// CLI
-// ---------------------------------------------------------------------------
-
-$argv = $_SERVER['argv'] ?? [];
-$command = $argv[1] ?? 'help';
-
-match ($command) {
-    'generate' => commandGenerate(array_slice($argv, 2)),
-    'inspect'  => commandInspect(array_slice($argv, 2)),
-    'profiles' => commandProfiles(),
-    'help', '--help', '-h' => commandHelp(),
-    default => commandHelp(unknown: $command),
-};
-
-// ---------------------------------------------------------------------------
-// Commands
-// ---------------------------------------------------------------------------
-
-function commandGenerate(array $args): void
-{
-    $profile = 'standard';
-    $count = 1;
-    $node = null;
-    $prefix = null;
-
-    for ($i = 0, $len = count($args); $i < $len; $i++) {
-        switch ($args[$i]) {
-            case '-p':
-            case '--profile':
-                if (!isset($args[$i + 1])) {
-                    die(error('Missing value for --profile'));
-                }
-                $profile = $args[++$i];
-                break;
-            case '-n':
-            case '--count':
-                if (!isset($args[$i + 1])) {
-                    die(error('Missing value for --count'));
-                }
-                $count = (int) $args[++$i];
-                break;
-            case '--node':
-                if (!isset($args[$i + 1])) {
-                    die(error('Missing value for --node'));
-                }
-                $node = $args[++$i];
-                break;
-            case '--prefix':
-                if (!isset($args[$i + 1])) {
-                    die(error('Missing value for --prefix'));
-                }
-                $prefix = $args[++$i];
-                break;
-            default:
-                if (str_starts_with($args[$i], '-')) {
-                    die(error('Unknown option: ' . sanitize($args[$i])));
-                }
-                break;
-        }
-    }
-
-    if ($count < 1) {
-        die(error('Count must be a positive integer'));
-    }
-    if ($count > 100000) {
-        die(error('Count must not exceed 100,000'));
-    }
-
-    try {
-        $gen = new HybridIdGenerator(profile: $profile, node: $node);
-    } catch (\InvalidArgumentException $e) {
-        die(error(sanitize($e->getMessage())));
-    }
-
-    for ($i = 0; $i < $count; $i++) {
-        try {
-            echo $gen->generate($prefix) . PHP_EOL;
-        } catch (\InvalidArgumentException $e) {
-            die(error(sanitize($e->getMessage())));
-        }
-    }
-}
-
-function commandInspect(array $args): void
-{
-    $id = $args[0] ?? null;
-
-    if ($id === null || $id === '') {
-        die(error('Usage: hybrid-id inspect <id>'));
-    }
-
-    $id = sanitize($id);
-    $profile = HybridIdGenerator::detectProfile($id);
-
-    if ($profile === null) {
-        die(error('Invalid HybridId: ' . $id));
-    }
-
-    $prefix = HybridIdGenerator::extractPrefix($id);
-    $config = HybridIdGenerator::profileConfig($profile);
-    $timestamp = HybridIdGenerator::extractTimestamp($id);
-    $datetime = HybridIdGenerator::extractDateTime($id);
-    $node = HybridIdGenerator::extractNode($id);
-    $rawId = $prefix !== null ? substr($id, strlen($prefix) + 1) : $id;
-    $random = substr($rawId, 10);
-    $entropy = HybridIdGenerator::entropy($profile);
-
-    echo PHP_EOL;
-    echo "  ID:         {$id}" . PHP_EOL;
-    if ($prefix !== null) {
-        echo "  Prefix:     {$prefix}" . PHP_EOL;
-    }
-    echo "  Profile:    {$profile} ({$config['length']} chars)" . PHP_EOL;
-    echo "  Timestamp:  {$timestamp}" . PHP_EOL;
-    echo "  DateTime:   {$datetime->format('Y-m-d H:i:s.v')}" . PHP_EOL;
-    echo "  Node:       {$node}" . PHP_EOL;
-    echo "  Random:     {$random}" . PHP_EOL;
-    echo "  Entropy:    {$entropy} bits" . PHP_EOL;
-    echo "  Valid:      yes" . PHP_EOL;
-    echo PHP_EOL;
-}
-
-function commandProfiles(): void
-{
-    echo PHP_EOL;
-    echo "  Profile     Length   Structure              Random bits   vs UUID v7" . PHP_EOL;
-    echo "  -------     ------   ---------              -----------   ----------" . PHP_EOL;
-
-    $comparisons = [
-        'compact'  => '< UUID v7',
-        'standard' => '~ UUID v7',
-        'extended' => '> UUID v7',
-    ];
-
-    foreach (HybridIdGenerator::profiles() as $name) {
-        $config = HybridIdGenerator::profileConfig($name);
-        $entropy = HybridIdGenerator::entropy($name);
-        $structure = "{$config['ts']}ts + {$config['node']}node + {$config['random']}rand";
-        $cmp = $comparisons[$name] ?? 'custom';
-
-        printf("  %-10s  %-7d  %-21s  %-12s  %s" . PHP_EOL, $name, $config['length'], $structure, "{$entropy} bits", $cmp);
-    }
-
-    echo PHP_EOL;
-}
-
-function commandHelp(?string $unknown = null): void
-{
-    if ($unknown !== null) {
-        fwrite(STDERR, 'Unknown command: ' . sanitize($unknown) . PHP_EOL . PHP_EOL);
-    }
-
-    echo "HybridId - Compact, time-sortable unique ID generator" . PHP_EOL;
-    echo PHP_EOL;
-    echo "Usage:" . PHP_EOL;
-    echo "  hybrid-id generate [options]    Generate one or more IDs" . PHP_EOL;
-    echo "  hybrid-id inspect <id>          Inspect an existing ID" . PHP_EOL;
-    echo "  hybrid-id profiles              Show available profiles" . PHP_EOL;
-    echo "  hybrid-id help                  Show this help" . PHP_EOL;
-    echo PHP_EOL;
-    echo "Generate options:" . PHP_EOL;
-    echo "  -p, --profile <name>   Profile: compact (16), standard (20), extended (24)" . PHP_EOL;
-    echo "  -n, --count <number>   Number of IDs to generate (default: 1)" . PHP_EOL;
-    echo "  --node <XX>            Node identifier (2 base62 chars)" . PHP_EOL;
-    echo "  --prefix <name>        Prefix for self-documenting IDs (e.g., usr, ord)" . PHP_EOL;
-    echo PHP_EOL;
-    echo "Examples:" . PHP_EOL;
-    echo "  hybrid-id generate" . PHP_EOL;
-    echo "  hybrid-id generate -p compact -n 10" . PHP_EOL;
-    echo "  hybrid-id generate -p extended --node A1" . PHP_EOL;
-    echo "  hybrid-id generate --prefix usr" . PHP_EOL;
-    echo "  hybrid-id inspect usr_0A1b2C3dX9YyZzWwQq12" . PHP_EOL;
-    echo PHP_EOL;
-
-    if ($unknown !== null) {
-        exit(1);
-    }
-}
-
-function sanitize(string $input): string
-{
-    return preg_replace('/[^\x20-\x7e]/', '', $input);
-}
-
-function error(string $message): string
-{
-    return "\033[31mError:\033[0m {$message}" . PHP_EOL;
-}
+$app = new Application();
+exit($app->run($_SERVER['argv'] ?? []));
