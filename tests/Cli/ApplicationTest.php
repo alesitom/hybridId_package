@@ -188,6 +188,17 @@ final class ApplicationTest extends TestCase
         $this->assertStringContainsString('Unknown option', $output->getErrors()[0]);
     }
 
+    public function testGenerateRejectsUnexpectedPositionalArg(): void
+    {
+        $output = new BufferedOutput();
+        $app = new Application($output);
+
+        $exitCode = $app->run(['hybrid-id', 'generate', 'unexpected-arg']);
+
+        $this->assertSame(1, $exitCode);
+        $this->assertStringContainsString('Unexpected argument', $output->getErrors()[0]);
+    }
+
     public function testGenerateRejectsInvalidPrefix(): void
     {
         $output = new BufferedOutput();
@@ -236,6 +247,20 @@ final class ApplicationTest extends TestCase
         $text = $output->getOutput();
         $this->assertStringContainsString('ID:', $text);
         $this->assertStringNotContainsString('Prefix:', $text);
+    }
+
+    public function testInspectRejectsValidIdWithNullByte(): void
+    {
+        $gen = new HybridIdGenerator();
+        $validId = $gen->generate();
+
+        $output = new BufferedOutput();
+        $app = new Application($output);
+
+        $exitCode = $app->run(['hybrid-id', 'inspect', $validId . "\x00"]);
+
+        $this->assertSame(1, $exitCode);
+        $this->assertStringContainsString('Invalid HybridId', $output->getErrors()[0]);
     }
 
     public function testInspectInvalidIdReturnsError(): void

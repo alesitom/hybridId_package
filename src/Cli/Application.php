@@ -80,11 +80,12 @@ final class Application
                     $prefix = $args[++$i];
                     break;
                 default:
-                    if (str_starts_with($args[$i], '-')) {
-                        $this->output->error('Unknown option: ' . self::sanitize($args[$i]));
-                        return 1;
-                    }
-                    break;
+                    $this->output->error(
+                        str_starts_with($args[$i], '-')
+                            ? 'Unknown option: ' . self::sanitize($args[$i])
+                            : 'Unexpected argument: ' . self::sanitize($args[$i]),
+                    );
+                    return 1;
             }
         }
 
@@ -107,7 +108,7 @@ final class Application
         for ($i = 0; $i < $count; $i++) {
             try {
                 $this->output->writeln($gen->generate($prefix));
-            } catch (\InvalidArgumentException $e) {
+            } catch (\Throwable $e) {
                 $this->output->error(self::sanitize($e->getMessage()));
                 return 1;
             }
@@ -125,11 +126,10 @@ final class Application
             return 1;
         }
 
-        $id = self::sanitize($id);
         $profile = HybridIdGenerator::detectProfile($id);
 
         if ($profile === null) {
-            $this->output->error('Invalid HybridId: ' . $id);
+            $this->output->error('Invalid HybridId: ' . self::sanitize($id));
             return 1;
         }
 

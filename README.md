@@ -285,8 +285,8 @@ strlen($id);                                    // 36 (3 prefix + 1 underscore +
 HybridIdGenerator::detectProfile($id);          // "ultra"
 HybridIdGenerator::entropy('ultra');             // 130.9
 
-// Register a minimal 12-char profile: 8ts + 2node + 2random
-HybridIdGenerator::registerProfile('tiny', 2);
+// Register an 18-char profile: 8ts + 2node + 8random
+HybridIdGenerator::registerProfile('tiny', 8);
 ```
 
 Constraints:
