@@ -294,6 +294,8 @@ Constraints:
 - Random length must be between 6 and 128
 - Total length must not conflict with an existing profile
 
+**Important:** Call `registerProfile()` during application bootstrap, before creating any generator instances. The profile registry is global (static), and mutations after construction will not affect existing instances' cached configuration.
+
 ## Interface and Dependency Injection
 
 `HybridIdGenerator` implements the `IdGenerator` interface for clean DI and testing:
@@ -463,6 +465,8 @@ CREATE TABLE orders (
 Each generator instance maintains a monotonic guard that ensures timestamps never go backward and strictly increment even within the same millisecond. If the system clock moves backward (NTP adjustment), or multiple IDs are generated in the same millisecond, the timestamp increments by 1ms to guarantee strict chronological ordering.
 
 **Timestamp drift under high throughput.** When N IDs are generated within the same millisecond, the last ID's timestamp will be `real_time + (N - 1)` ms. This means `extractDateTime()` may return a time slightly ahead of the actual wall-clock creation time. The drift is negligible in practice (e.g., 1,000 IDs/ms = 1 second of drift) and self-corrects as soon as wall-clock time catches up.
+
+**Forward clock jumps.** If the system clock jumps far into the future (e.g. NTP correction) and then corrects back, the monotonic guard holds the inflated timestamp until wall-clock time catches up. This preserves ordering guarantees — no ID will ever have a lower timestamp than a previously generated one — but timestamps may appear ahead of real time during the catch-up window. This is a deliberate trade-off: ordering is always preserved at the cost of temporary timestamp inflation.
 
 ## Concurrency and Limitations
 

@@ -227,8 +227,16 @@ final class Application
     // Internal
     // -------------------------------------------------------------------------
 
+    private const int MAX_INPUT_LENGTH = 256;
+
     private static function sanitize(string $input): string
     {
-        return preg_replace('/[^\x20-\x7e]/', '', $input);
+        $cleaned = preg_replace('/[^\x20-\x7e]/', '', $input);
+
+        if (strlen($cleaned) > self::MAX_INPUT_LENGTH) {
+            return substr($cleaned, 0, self::MAX_INPUT_LENGTH);
+        }
+
+        return $cleaned;
     }
 }
