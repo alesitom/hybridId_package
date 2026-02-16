@@ -60,6 +60,7 @@ final class HybridIdGenerator implements IdGenerator
         string $profile = 'standard',
         ?string $node = null,
         ?int $maxIdLength = null,
+        bool $requireExplicitNode = false,
     ) {
         if (PHP_INT_SIZE < 8) {
             throw new \RuntimeException('HybridId requires 64-bit PHP');
@@ -84,6 +85,12 @@ final class HybridIdGenerator implements IdGenerator
             }
             $this->node = $node;
         } else {
+            if ($requireExplicitNode) {
+                throw new \InvalidArgumentException(
+                    'Explicit node is required (requireExplicitNode is enabled). '
+                    . 'Provide a 2-character base62 node identifier.',
+                );
+            }
             $this->node = self::autoDetectNode();
         }
 
@@ -112,10 +119,12 @@ final class HybridIdGenerator implements IdGenerator
     {
         $profile = getenv('HYBRID_ID_PROFILE', true) ?: getenv('HYBRID_ID_PROFILE');
         $node = getenv('HYBRID_ID_NODE', true) ?: getenv('HYBRID_ID_NODE');
+        $requireNode = getenv('HYBRID_ID_REQUIRE_NODE', true) ?: getenv('HYBRID_ID_REQUIRE_NODE');
 
         return new self(
             profile: ($profile !== false && $profile !== '') ? $profile : 'standard',
             node: ($node !== false && $node !== '') ? $node : null,
+            requireExplicitNode: $requireNode !== false && $requireNode !== '' && $requireNode !== '0',
         );
     }
 
@@ -509,14 +518,50 @@ final class HybridIdGenerator implements IdGenerator
     }
 
     /**
-     * Compare two HybridIds chronologically.
+     * Compare two HybridIds with total ordering.
      *
+     * Primary sort: timestamp (chronological). Tiebreaker: lexicographic on body.
      * Returns -1, 0, or 1 — compatible with usort() and spaceship operator convention.
+     * Returns 0 only when both IDs are byte-identical (after prefix stripping).
      * Handles prefixed IDs by stripping prefixes before comparison.
      */
     public static function compare(string $a, string $b): int
     {
-        return self::extractTimestamp($a) <=> self::extractTimestamp($b);
+        $cmp = self::extractTimestamp($a) <=> self::extractTimestamp($b);
+
+        return $cmp !== 0 ? $cmp : strcmp(self::stripPrefix($a), self::stripPrefix($b));
+    }
+
+    // -------------------------------------------------------------------------
+    // Range helpers (for DB queries)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Return the lowest possible ID for a given timestamp and profile.
+     *
+     * Useful for constructing inclusive lower bounds in DB range queries:
+     *   WHERE id >= minForTimestamp($startMs)
+     */
+    public static function minForTimestamp(int $timestampMs, string $profile = 'standard'): string
+    {
+        $config = self::profileConfig($profile);
+        $ts = self::encodeBase62($timestampMs, $config['ts']);
+
+        return $ts . str_repeat('0', $config['node'] + $config['random']);
+    }
+
+    /**
+     * Return the highest possible ID for a given timestamp and profile.
+     *
+     * Useful for constructing inclusive upper bounds in DB range queries:
+     *   WHERE id <= maxForTimestamp($endMs)
+     */
+    public static function maxForTimestamp(int $timestampMs, string $profile = 'standard'): string
+    {
+        $config = self::profileConfig($profile);
+        $ts = self::encodeBase62($timestampMs, $config['ts']);
+
+        return $ts . str_repeat('z', $config['node'] + $config['random']);
     }
 
     // -------------------------------------------------------------------------
