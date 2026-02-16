@@ -637,6 +637,53 @@ Every character matters in a 16-24 char ID. Embedding a format version byte woul
 - If a future layout change is needed, a new profile name handles it without touching existing IDs
 - Existing IDs remain valid forever — the format is append-only by design
 
+## Framework Integrations
+
+| Package | Framework | Install |
+|---|---|---|
+| [hybrid-id-laravel](https://github.com/alesitom/hybrid-id-laravel) | Laravel 11/12 | `composer require alesitom/hybrid-id-laravel` |
+| [hybrid-id-doctrine](https://github.com/alesitom/hybrid-id-doctrine) | Doctrine DBAL 4 / ORM 3 | `composer require alesitom/hybrid-id-doctrine` |
+
+### Laravel
+
+Eloquent trait with auto-generation and Stripe-style prefixes:
+
+```php
+use HybridId\Laravel\HasHybridId;
+
+class Order extends Model
+{
+    use HasHybridId;
+    protected static string $idPrefix = 'ord';
+}
+
+$order = Order::create(['total' => 99.90]);
+$order->id;  // ord_0VBFDQz4CYRtntu09sbf
+```
+
+### Doctrine
+
+DBAL type and ORM ID generator:
+
+```php
+use HybridId\Doctrine\HybridIdGenerator;
+
+#[ORM\Entity]
+class Order
+{
+    #[ORM\Id]
+    #[ORM\Column(type: 'hybrid_id', length: 29)]
+    #[ORM\GeneratedValue(strategy: 'CUSTOM')]
+    #[ORM\CustomIdGenerator(class: HybridIdGenerator::class)]
+    private string $id;
+
+    public static function hybridIdPrefix(): string
+    {
+        return 'ord';
+    }
+}
+```
+
 ## Requirements
 
 - PHP >= 8.3 (64-bit)
