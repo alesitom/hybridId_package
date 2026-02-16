@@ -45,11 +45,13 @@ final class HybridIdGenerator implements IdGenerator
 
     private readonly string $profile;
     private readonly string $node;
+    private readonly ?int $maxIdLength;
     private int $lastTimestamp = 0;
 
     public function __construct(
         string $profile = 'standard',
         ?string $node = null,
+        ?int $maxIdLength = null,
     ) {
         if (PHP_INT_SIZE < 8) {
             throw new \RuntimeException('HybridId requires 64-bit PHP');
@@ -74,6 +76,21 @@ final class HybridIdGenerator implements IdGenerator
         } else {
             $this->node = self::autoDetectNode();
         }
+
+        if ($maxIdLength !== null) {
+            $bodyLength = self::resolveProfile($this->profile)['length'];
+            if ($maxIdLength < $bodyLength) {
+                throw new \InvalidArgumentException(
+                    sprintf(
+                        'maxIdLength (%d) must be >= body length (%d) for profile "%s"',
+                        $maxIdLength,
+                        $bodyLength,
+                        $this->profile,
+                    ),
+                );
+            }
+        }
+        $this->maxIdLength = $maxIdLength;
     }
 
     /**
@@ -146,6 +163,73 @@ final class HybridIdGenerator implements IdGenerator
         return $this->node;
     }
 
+    /**
+     * Get the body length (without prefix) for this instance's profile.
+     */
+    public function bodyLength(): int
+    {
+        return self::resolveProfile($this->profile)['length'];
+    }
+
+    public function getMaxIdLength(): ?int
+    {
+        return $this->maxIdLength;
+    }
+
+    // -------------------------------------------------------------------------
+    // Instance validation
+    // -------------------------------------------------------------------------
+
+    /**
+     * Validate that an ID matches this instance's profile and optionally a specific prefix.
+     *
+     * Unlike the static isValid(), this checks against the configured profile specifically.
+     * This is a format check, not an authorization mechanism.
+     *
+     * @param string $id The ID to validate
+     * @param string|null $expectedPrefix When provided, the ID's prefix must match exactly
+     */
+    public function validate(string $id, ?string $expectedPrefix = null): bool
+    {
+        // Early guards
+        if ($id === '' || strlen($id) > 147) {
+            return false;
+        }
+
+        if (!preg_match('/^[a-zA-Z0-9_]+$/', $id)) {
+            return false;
+        }
+
+        // Strip prefix and check body length against THIS profile
+        $body = self::stripPrefix($id);
+        $config = self::resolveProfile($this->profile);
+
+        if (strlen($body) !== $config['length']) {
+            return false;
+        }
+
+        if (!self::isBase62String($body)) {
+            return false;
+        }
+
+        // Prefix validation
+        $prefix = self::extractPrefix($id);
+
+        if ($expectedPrefix !== null) {
+            return $prefix === $expectedPrefix;
+        }
+
+        // If has prefix, validate its format
+        if ($prefix !== null) {
+            if (strlen($prefix) > self::PREFIX_MAX_LENGTH
+                || !preg_match('/^[a-z][a-z0-9]*$/', $prefix)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     // -------------------------------------------------------------------------
     // Static utilities (no instance needed)
     // -------------------------------------------------------------------------
@@ -157,6 +241,76 @@ final class HybridIdGenerator implements IdGenerator
     public static function isValid(string $id): bool
     {
         return self::detectProfile($id) !== null;
+    }
+
+    /**
+     * Calculate the recommended database column size for a profile.
+     *
+     * @param int $maxPrefixLength Maximum prefix length to accommodate (0 = no prefix)
+     * @return int Column size in characters
+     */
+    public static function recommendedColumnSize(string $profile, int $maxPrefixLength = 0): int
+    {
+        if ($maxPrefixLength < 0 || $maxPrefixLength > self::PREFIX_MAX_LENGTH) {
+            throw new \InvalidArgumentException(
+                sprintf('maxPrefixLength must be between 0 and %d', self::PREFIX_MAX_LENGTH),
+            );
+        }
+
+        $bodyLength = self::profileConfig($profile)['length'];
+
+        if ($maxPrefixLength === 0) {
+            return $bodyLength;
+        }
+
+        return $maxPrefixLength + 1 + $bodyLength; // prefix + underscore + body
+    }
+
+    /**
+     * Parse a HybridId into all its components in a single pass.
+     *
+     * Returns an array with 'valid' => true and all components for valid IDs,
+     * or 'valid' => false with partial data for invalid IDs.
+     *
+     * @return array{valid: bool, prefix: ?string, profile?: string, body?: string, timestamp?: int, datetime?: \DateTimeImmutable, node?: string, random?: string}
+     */
+    public static function parse(string $id): array
+    {
+        if ($id === '' || strlen($id) > 147 || !preg_match('/^[a-zA-Z0-9_]+$/', $id)) {
+            return ['valid' => false, 'prefix' => null, 'body' => null];
+        }
+
+        $prefix = self::extractPrefix($id);
+        $body = self::stripPrefix($id);
+        $profile = self::detectProfile($id);
+
+        if ($profile === null) {
+            return [
+                'valid' => false,
+                'prefix' => $prefix,
+                'body' => $body,
+            ];
+        }
+
+        $timestamp = self::decodeBase62(substr($body, 0, 8));
+        $seconds = intdiv($timestamp, 1000);
+        $microseconds = ($timestamp % 1000) * 1000;
+
+        $datetime = \DateTimeImmutable::createFromFormat(
+            'U u',
+            sprintf('%d %06d', $seconds, $microseconds),
+        );
+
+        return [
+            'valid' => true,
+            'prefix' => $prefix,
+            'profile' => $profile,
+            'body' => $body,
+            'timestamp' => $timestamp,
+            'datetime' => $datetime !== false ? $datetime : null,
+            'node' => substr($body, 8, 2),
+            'random' => substr($body, 10),
+        ];
     }
 
     /**
@@ -395,8 +549,19 @@ final class HybridIdGenerator implements IdGenerator
         $this->lastTimestamp = $now;
 
         $id = $timestamp . $this->node . $random;
+        $fullId = self::applyPrefix($id, $prefix);
 
-        return self::applyPrefix($id, $prefix);
+        if ($this->maxIdLength !== null && strlen($fullId) > $this->maxIdLength) {
+            throw new \OverflowException(
+                sprintf(
+                    'Generated ID length %d exceeds maxIdLength %d. Use a shorter prefix or increase maxIdLength',
+                    strlen($fullId),
+                    $this->maxIdLength,
+                ),
+            );
+        }
+
+        return $fullId;
     }
 
     /**
