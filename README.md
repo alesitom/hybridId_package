@@ -69,6 +69,9 @@ $gen = new HybridIdGenerator();
 
 // Explicit profile and node
 $gen = new HybridIdGenerator(profile: 'extended', node: 'A1');
+
+// With column size guard (throws OverflowException if prefix + body exceeds limit)
+$gen = new HybridIdGenerator(profile: 'extended', maxIdLength: 32);
 ```
 
 ### Via environment variables
@@ -152,6 +155,8 @@ Instance state is fully independent -- different monotonic counters, different n
 
 ## Validation
 
+### Static validation (any profile)
+
 ```php
 use HybridId\HybridIdGenerator;
 
@@ -163,6 +168,21 @@ HybridIdGenerator::detectProfile('0VBFDQz4CYRtntu09sbf');  // "standard"
 HybridIdGenerator::detectProfile('usr_0VBFDQz4CY8xegI0');  // "compact"
 HybridIdGenerator::detectProfile('bad');                    // null
 ```
+
+### Instance validation (profile-aware)
+
+`validate()` checks that an ID matches **this instance's profile** and optionally a specific prefix:
+
+```php
+$gen = new HybridIdGenerator(profile: 'extended');
+
+$gen->validate($extendedId);              // true — body length matches extended (24)
+$gen->validate($standardId);              // false — body length is 20, not 24
+$gen->validate($extendedId, 'ord');       // true — profile matches AND prefix is 'ord'
+$gen->validate($extendedId, 'usr');       // false — prefix mismatch
+```
+
+This is a format check, not an authorization mechanism.
 
 ## Extracting Metadata
 
@@ -179,6 +199,28 @@ HybridIdGenerator::extractDateTime($id);   // DateTimeImmutable (2026-02-14 22:5
 HybridIdGenerator::extractNode($id);       // "A1"
 HybridIdGenerator::extractPrefix($id);     // "usr"
 HybridIdGenerator::extractPrefix($gen->generate());  // null (no prefix)
+```
+
+## Parsing
+
+Extract all components in a single call with `parse()`:
+
+```php
+$result = HybridIdGenerator::parse('usr_0VB0Td2u01mcw1hoy5Kg8mR');
+// [
+//     'valid'     => true,
+//     'prefix'    => 'usr',
+//     'profile'   => 'extended',
+//     'body'      => '0VB0Td2u01mcw1hoy5Kg8mR',
+//     'timestamp' => 1708012345678,
+//     'datetime'  => DateTimeImmutable,
+//     'node'      => '01',
+//     'random'    => 'mcw1hoy5Kg8mR',
+// ]
+
+// Invalid IDs return partial data with valid => false
+$result = HybridIdGenerator::parse('not_valid');
+// ['valid' => false, 'prefix' => 'not', 'body' => 'valid']
 ```
 
 ## Sorting
@@ -220,8 +262,10 @@ HybridIdGenerator::profileConfig('compact');
 // ['length' => 16, 'ts' => 8, 'node' => 2, 'random' => 6]
 
 $gen = new HybridIdGenerator(profile: 'extended', node: 'A1');
-$gen->getProfile();  // "extended"
-$gen->getNode();     // "A1"
+$gen->getProfile();      // "extended"
+$gen->getNode();         // "A1"
+$gen->bodyLength();      // 24
+$gen->getMaxIdLength();  // null (no limit set)
 ```
 
 ## Custom Profiles
@@ -342,6 +386,36 @@ interface IdGenerator
 
 ## Database Usage
 
+### VARCHAR sizing reference
+
+| Profile | Body | No prefix | With prefix (max 3) | With prefix (max 8) |
+|---|---|---|---|---|
+| `compact` | 16 | `CHAR(16)` | `VARCHAR(20)` | `VARCHAR(25)` |
+| `standard` | 20 | `CHAR(20)` | `VARCHAR(24)` | `VARCHAR(29)` |
+| `extended` | 24 | `CHAR(24)` | `VARCHAR(28)` | `VARCHAR(33)` |
+
+Formula: `body_length + prefix_length + 1` (the `+1` accounts for the underscore separator).
+
+Use `recommendedColumnSize()` to calculate this programmatically:
+
+```php
+HybridIdGenerator::recommendedColumnSize('extended', maxPrefixLength: 7);  // 32
+HybridIdGenerator::recommendedColumnSize('standard');                       // 20 (no prefix)
+```
+
+### Column guard with maxIdLength
+
+Prevent runtime truncation by setting `maxIdLength` in the constructor:
+
+```php
+$gen = new HybridIdGenerator(profile: 'extended', maxIdLength: 32);
+
+$gen->generate('billing');   // OK → 32 chars (7 + 1 + 24)
+$gen->generate('shipping');  // throws OverflowException → 33 chars exceeds 32
+```
+
+### SQL examples
+
 ```sql
 -- Standard profile (unprefixed)
 CREATE TABLE users (
@@ -437,6 +511,14 @@ HybridIdGenerator::profiles();
 - **Custom profiles**: `registerProfile('ultra', 22)`
 - **`fromEnv()`**: Named constructor from environment variables
 - **`getProfile()` / `getNode()`**: Instance getters
+
+### New in v2.2.0
+
+- **`bodyLength()`**: Instance method returning body length for the configured profile
+- **`validate()`**: Instance method for profile-aware validation with optional prefix matching
+- **`parse()`**: Static method to extract all ID components in a single pass
+- **`recommendedColumnSize()`**: Static helper for database column sizing
+- **`maxIdLength`**: Optional constructor parameter to guard against column overflow
 
 ### ID format
 

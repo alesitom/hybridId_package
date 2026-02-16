@@ -969,6 +969,364 @@ final class HybridIdGeneratorTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
+    // bodyLength (#78)
+    // -------------------------------------------------------------------------
+
+    public function testBodyLengthReturnsCorrectValues(): void
+    {
+        $this->assertSame(16, (new HybridIdGenerator(profile: 'compact'))->bodyLength());
+        $this->assertSame(20, (new HybridIdGenerator(profile: 'standard'))->bodyLength());
+        $this->assertSame(24, (new HybridIdGenerator(profile: 'extended'))->bodyLength());
+    }
+
+    public function testBodyLengthWithCustomProfile(): void
+    {
+        try {
+            HybridIdGenerator::registerProfile('ultra', 22);
+
+            $this->assertSame(32, (new HybridIdGenerator(profile: 'ultra'))->bodyLength());
+        } finally {
+            HybridIdGenerator::resetProfiles();
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // recommendedColumnSize (#78)
+    // -------------------------------------------------------------------------
+
+    public function testRecommendedColumnSizeWithoutPrefix(): void
+    {
+        $this->assertSame(16, HybridIdGenerator::recommendedColumnSize('compact'));
+        $this->assertSame(20, HybridIdGenerator::recommendedColumnSize('standard'));
+        $this->assertSame(24, HybridIdGenerator::recommendedColumnSize('extended'));
+    }
+
+    public function testRecommendedColumnSizeWithPrefix(): void
+    {
+        // prefix + 1 underscore + body
+        $this->assertSame(20, HybridIdGenerator::recommendedColumnSize('compact', 3));    // 3+1+16
+        $this->assertSame(25, HybridIdGenerator::recommendedColumnSize('compact', 8));    // 8+1+16
+        $this->assertSame(28, HybridIdGenerator::recommendedColumnSize('standard', 7));   // 7+1+20
+        $this->assertSame(29, HybridIdGenerator::recommendedColumnSize('standard', 8));   // 8+1+20
+        $this->assertSame(33, HybridIdGenerator::recommendedColumnSize('extended', 8));   // 8+1+24
+    }
+
+    public function testRecommendedColumnSizeRejectsNegativePrefix(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('maxPrefixLength must be between 0 and 8');
+
+        HybridIdGenerator::recommendedColumnSize('standard', -1);
+    }
+
+    public function testRecommendedColumnSizeRejectsTooLongPrefix(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('maxPrefixLength must be between 0 and 8');
+
+        HybridIdGenerator::recommendedColumnSize('standard', 9);
+    }
+
+    public function testRecommendedColumnSizeRejectsInvalidProfile(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Invalid profile');
+
+        HybridIdGenerator::recommendedColumnSize('nonexistent');
+    }
+
+    // -------------------------------------------------------------------------
+    // maxIdLength (#81)
+    // -------------------------------------------------------------------------
+
+    public function testMaxIdLengthDefaultIsNull(): void
+    {
+        $gen = new HybridIdGenerator();
+
+        $this->assertNull($gen->getMaxIdLength());
+    }
+
+    public function testMaxIdLengthAcceptsValidValue(): void
+    {
+        $gen = new HybridIdGenerator(profile: 'extended', maxIdLength: 32);
+
+        $this->assertSame(32, $gen->getMaxIdLength());
+    }
+
+    public function testMaxIdLengthAcceptsExactBodyLength(): void
+    {
+        $gen = new HybridIdGenerator(profile: 'compact', maxIdLength: 16);
+
+        $this->assertSame(16, $gen->getMaxIdLength());
+        // Unprefixed generation should work
+        $this->assertSame(16, strlen($gen->generate()));
+    }
+
+    public function testMaxIdLengthRejectsBelowBodyLength(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('maxIdLength (15) must be >= body length (16)');
+
+        new HybridIdGenerator(profile: 'compact', maxIdLength: 15);
+    }
+
+    public function testMaxIdLengthAllowsWithinLimit(): void
+    {
+        $gen = new HybridIdGenerator(profile: 'extended', maxIdLength: 32);
+
+        // 7 prefix + 1 underscore + 24 body = 32 — exactly at limit
+        $id = $gen->generate('billing');
+        $this->assertSame(32, strlen($id));
+    }
+
+    public function testMaxIdLengthThrowsWhenExceeded(): void
+    {
+        $gen = new HybridIdGenerator(profile: 'extended', maxIdLength: 32);
+
+        $this->expectException(\OverflowException::class);
+        $this->expectExceptionMessage('exceeds maxIdLength 32');
+
+        // 8 prefix + 1 underscore + 24 body = 33 — exceeds 32
+        $gen->generate('shipping');
+    }
+
+    public function testMaxIdLengthNullAllowsAnyLength(): void
+    {
+        $gen = new HybridIdGenerator(profile: 'extended');
+
+        // Max prefix (8) + underscore + 24 body = 33 — no limit set, should work
+        $id = $gen->generate('abcdefgh');
+        $this->assertSame(33, strlen($id));
+    }
+
+    public function testMaxIdLengthUnprefixedAlwaysFits(): void
+    {
+        $gen = new HybridIdGenerator(profile: 'standard', maxIdLength: 20);
+
+        // No prefix, body = 20, exactly at limit
+        $id = $gen->generate();
+        $this->assertSame(20, strlen($id));
+    }
+
+    // -------------------------------------------------------------------------
+    // validate (#79)
+    // -------------------------------------------------------------------------
+
+    public function testValidateAcceptsCorrectProfile(): void
+    {
+        $gen = new HybridIdGenerator(profile: 'extended');
+        $id = $gen->generate();
+
+        $this->assertTrue($gen->validate($id));
+    }
+
+    public function testValidateRejectsWrongProfile(): void
+    {
+        $genExtended = new HybridIdGenerator(profile: 'extended');
+        $genStandard = new HybridIdGenerator(profile: 'standard');
+
+        $standardId = $genStandard->generate();
+
+        // Extended generator rejects standard-length ID
+        $this->assertFalse($genExtended->validate($standardId));
+    }
+
+    public function testValidateAcceptsMatchingPrefix(): void
+    {
+        $gen = new HybridIdGenerator(profile: 'standard');
+        $id = $gen->generate('ord');
+
+        $this->assertTrue($gen->validate($id, 'ord'));
+    }
+
+    public function testValidateRejectsMismatchedPrefix(): void
+    {
+        $gen = new HybridIdGenerator(profile: 'standard');
+        $id = $gen->generate('usr');
+
+        $this->assertFalse($gen->validate($id, 'ord'));
+    }
+
+    public function testValidateAcceptsUnprefixedWhenNoPrefixExpected(): void
+    {
+        $gen = new HybridIdGenerator(profile: 'standard');
+        $id = $gen->generate();
+
+        $this->assertTrue($gen->validate($id));
+    }
+
+    public function testValidateAcceptsPrefixedWhenNoPrefixExpected(): void
+    {
+        $gen = new HybridIdGenerator(profile: 'standard');
+        $id = $gen->generate('usr');
+
+        // No expected prefix — accepts any valid prefix
+        $this->assertTrue($gen->validate($id));
+    }
+
+    public function testValidateRejectsExpectedPrefixOnUnprefixedId(): void
+    {
+        $gen = new HybridIdGenerator(profile: 'standard');
+        $id = $gen->generate();
+
+        // Expecting 'usr' but ID has no prefix
+        $this->assertFalse($gen->validate($id, 'usr'));
+    }
+
+    public function testValidateRejectsEmpty(): void
+    {
+        $gen = new HybridIdGenerator();
+
+        $this->assertFalse($gen->validate(''));
+    }
+
+    public function testValidateRejectsInvalidCharacters(): void
+    {
+        $gen = new HybridIdGenerator();
+
+        $this->assertFalse($gen->validate('ABC!@#$%^&*()12345678'));
+    }
+
+    public function testValidateRejectsOversizedInput(): void
+    {
+        $gen = new HybridIdGenerator();
+
+        $this->assertFalse($gen->validate(str_repeat('A', 148)));
+    }
+
+    public function testValidateAllProfiles(): void
+    {
+        $compact = new HybridIdGenerator(profile: 'compact');
+        $standard = new HybridIdGenerator(profile: 'standard');
+        $extended = new HybridIdGenerator(profile: 'extended');
+
+        $compactId = $compact->generate('log');
+        $standardId = $standard->generate('usr');
+        $extendedId = $extended->generate('txn');
+
+        // Each validates its own profile
+        $this->assertTrue($compact->validate($compactId, 'log'));
+        $this->assertTrue($standard->validate($standardId, 'usr'));
+        $this->assertTrue($extended->validate($extendedId, 'txn'));
+
+        // Cross-profile validation fails
+        $this->assertFalse($compact->validate($standardId));
+        $this->assertFalse($standard->validate($extendedId));
+        $this->assertFalse($extended->validate($compactId));
+    }
+
+    public function testValidateRejectsInvalidPrefixFormat(): void
+    {
+        $gen = new HybridIdGenerator(profile: 'standard');
+
+        $this->assertFalse($gen->validate('USR_' . str_repeat('A', 20)));
+        $this->assertFalse($gen->validate('1usr_' . str_repeat('A', 20)));
+    }
+
+    // -------------------------------------------------------------------------
+    // parse (#80)
+    // -------------------------------------------------------------------------
+
+    public function testParseValidUnprefixedId(): void
+    {
+        $gen = new HybridIdGenerator(node: 'A1');
+        $id = $gen->generate();
+
+        $result = HybridIdGenerator::parse($id);
+
+        $this->assertTrue($result['valid']);
+        $this->assertNull($result['prefix']);
+        $this->assertSame('standard', $result['profile']);
+        $this->assertSame($id, $result['body']);
+        $this->assertIsInt($result['timestamp']);
+        $this->assertInstanceOf(\DateTimeImmutable::class, $result['datetime']);
+        $this->assertSame('A1', $result['node']);
+        $this->assertSame(10, strlen($result['random']));
+    }
+
+    public function testParseValidPrefixedId(): void
+    {
+        $gen = new HybridIdGenerator(node: 'B2');
+        $id = $gen->generate('usr');
+
+        $result = HybridIdGenerator::parse($id);
+
+        $this->assertTrue($result['valid']);
+        $this->assertSame('usr', $result['prefix']);
+        $this->assertSame('standard', $result['profile']);
+        $this->assertSame(20, strlen($result['body']));
+        $this->assertSame('B2', $result['node']);
+    }
+
+    public function testParseAllProfiles(): void
+    {
+        $gen = new HybridIdGenerator();
+
+        $compact = HybridIdGenerator::parse($gen->compact());
+        $standard = HybridIdGenerator::parse($gen->standard());
+        $extended = HybridIdGenerator::parse($gen->extended());
+
+        $this->assertSame('compact', $compact['profile']);
+        $this->assertSame(6, strlen($compact['random']));
+
+        $this->assertSame('standard', $standard['profile']);
+        $this->assertSame(10, strlen($standard['random']));
+
+        $this->assertSame('extended', $extended['profile']);
+        $this->assertSame(14, strlen($extended['random']));
+    }
+
+    public function testParseInvalidIdReturnsPartialData(): void
+    {
+        $result = HybridIdGenerator::parse('usr_invalidbody');
+
+        $this->assertFalse($result['valid']);
+        $this->assertSame('usr', $result['prefix']);
+        $this->assertSame('invalidbody', $result['body']);
+        $this->assertArrayNotHasKey('profile', $result);
+        $this->assertArrayNotHasKey('timestamp', $result);
+    }
+
+    public function testParseEmptyStringReturnsInvalid(): void
+    {
+        $result = HybridIdGenerator::parse('');
+
+        $this->assertFalse($result['valid']);
+        $this->assertNull($result['prefix']);
+        $this->assertNull($result['body']);
+    }
+
+    public function testParseSpecialCharsReturnsInvalid(): void
+    {
+        $result = HybridIdGenerator::parse('abc!@#');
+
+        $this->assertFalse($result['valid']);
+        $this->assertNull($result['prefix']);
+        $this->assertNull($result['body']);
+    }
+
+    public function testParseTimestampMatchesExtract(): void
+    {
+        $gen = new HybridIdGenerator();
+        $id = $gen->generate('txn');
+
+        $parsed = HybridIdGenerator::parse($id);
+        $extracted = HybridIdGenerator::extractTimestamp($id);
+
+        $this->assertSame($extracted, $parsed['timestamp']);
+    }
+
+    public function testParseNodeMatchesExtract(): void
+    {
+        $gen = new HybridIdGenerator(node: 'Z9');
+        $id = $gen->generate();
+
+        $parsed = HybridIdGenerator::parse($id);
+
+        $this->assertSame('Z9', $parsed['node']);
+    }
+
+    // -------------------------------------------------------------------------
     // Edge cases
     // -------------------------------------------------------------------------
 
