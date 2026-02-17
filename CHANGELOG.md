@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [4.1.1] - 2026-02-17
+
+### Added
+- `HYBRID_ID_MAX_LENGTH` env var support in `fromEnv()` (#180)
+- `maxDriftMs` constructor parameter to tune monotonic drift cap (default: 5000ms) (#174)
+- `DEFAULT_MAX_DRIFT_MS` public constant
+- `MockHybridIdGenerator` moved from `tests/Testing/` to `src/Testing/` — now available to consumers via `HybridId\Testing\MockHybridIdGenerator`
+
 ## [4.1.0] - 2026-02-17
 
 ### Added
@@ -235,6 +243,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - Configurable entropy profiles
 - Time-sortable IDs with millisecond precision
 
+[4.1.1]: https://github.com/alesitom/hybrid-id/compare/v4.1.0...v4.1.1
 [4.1.0]: https://github.com/alesitom/hybrid-id/compare/v4.0.0...v4.1.0
 [4.0.0]: https://github.com/alesitom/hybrid-id/compare/v3.2.2...v4.0.0
 [3.2.2]: https://github.com/alesitom/hybrid-id/compare/v3.2.1...v3.2.2
