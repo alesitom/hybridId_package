@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [4.1.2] - 2026-02-17
+
+### Fixed
+- `readEnv()` now falls back to `$_ENV` and `$_SERVER` superglobals, fixing compatibility with vlucas/phpdotenv v5+ default config (`createImmutable()`) which does not call `putenv()` (#182)
+
+### Documentation
+- `fromEnv()` docblock now documents read order: `getenv()` → `$_ENV` → `$_SERVER`
+
 ## [4.1.1] - 2026-02-17
 
 ### Added
@@ -243,6 +251,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - Configurable entropy profiles
 - Time-sortable IDs with millisecond precision
 
+[4.1.2]: https://github.com/alesitom/hybrid-id/compare/v4.1.1...v4.1.2
 [4.1.1]: https://github.com/alesitom/hybrid-id/compare/v4.1.0...v4.1.1
 [4.1.0]: https://github.com/alesitom/hybrid-id/compare/v4.0.0...v4.1.0
 [4.0.0]: https://github.com/alesitom/hybrid-id/compare/v3.2.2...v4.0.0
