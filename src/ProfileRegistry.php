@@ -6,6 +6,7 @@ namespace HybridId;
 
 use HybridId\Exception\InvalidProfileException;
 
+/** @since 4.0.0 */
 final class ProfileRegistry implements ProfileRegistryInterface
 {
     private const array BUILT_IN = [

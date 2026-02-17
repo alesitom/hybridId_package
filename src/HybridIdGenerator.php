@@ -122,6 +122,8 @@ final class HybridIdGenerator implements IdGenerator
      * Security note: treat HYBRID_ID_NODE as sensitive configuration.
      * In shared hosting or containerized environments, ensure these
      * variables cannot be overridden by untrusted parties.
+     *
+     * @since 4.0.0
      */
     public static function fromEnv(?ProfileRegistryInterface $registry = null): self
     {
@@ -231,6 +233,8 @@ final class HybridIdGenerator implements IdGenerator
      * @note Large batches advance the monotonic counter, causing timestamp drift
      *       proportional to the batch size (e.g. 5,000 IDs ≈ 5s drift). The drift
      *       cap (MAX_DRIFT_MS) will throw IdOverflowException if exceeded.
+     *
+     * @since 4.0.0
      */
     public function generateBatch(int $count, ?string $prefix = null): array
     {
@@ -270,11 +274,13 @@ final class HybridIdGenerator implements IdGenerator
         return $this->profileConfig['length'];
     }
 
+    /** @since 4.0.0 */
     public function getMaxIdLength(): ?int
     {
         return $this->maxIdLength;
     }
 
+    /** @since 4.0.0 */
     public function isBlind(): bool
     {
         return $this->blind;
@@ -352,6 +358,8 @@ final class HybridIdGenerator implements IdGenerator
      *
      * @param int $maxPrefixLength Maximum prefix length to accommodate (0 = no prefix)
      * @return int Column size in characters
+     *
+     * @since 4.0.0
      */
     public static function recommendedColumnSize(Profile|string $profile, int $maxPrefixLength = 0): int
     {
@@ -378,6 +386,8 @@ final class HybridIdGenerator implements IdGenerator
      * component keys (profile, timestamp, datetime, node, random) are null.
      *
      * @return array{valid: bool, prefix: ?string, body: ?string, profile: ?string, timestamp: ?int, datetime: ?\DateTimeImmutable, node: ?string, random: ?string}
+     *
+     * @since 4.0.0
      */
     public static function parse(string $id): array
     {
@@ -542,6 +552,8 @@ final class HybridIdGenerator implements IdGenerator
      * Get profile configuration details.
      *
      * @return array{length: int, ts: int, node: int, random: int}
+     *
+     * @since 4.0.0
      */
     public static function profileConfig(Profile|string $profile): array
     {
@@ -632,6 +644,8 @@ final class HybridIdGenerator implements IdGenerator
      *
      * Useful for constructing inclusive lower bounds in DB range queries:
      *   WHERE id >= minForTimestamp($startMs)
+     *
+     * @since 4.0.0
      */
     public static function minForTimestamp(int $timestampMs, Profile|string $profile = Profile::Standard): string
     {
@@ -647,6 +661,8 @@ final class HybridIdGenerator implements IdGenerator
      *
      * Useful for constructing inclusive upper bounds in DB range queries:
      *   WHERE id <= maxForTimestamp($endMs)
+     *
+     * @since 4.0.0
      */
     public static function maxForTimestamp(int $timestampMs, Profile|string $profile = Profile::Standard): string
     {

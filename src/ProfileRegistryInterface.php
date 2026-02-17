@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace HybridId;
 
+/** @since 4.0.0 */
 interface ProfileRegistryInterface
 {
     /**

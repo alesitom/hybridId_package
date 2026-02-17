@@ -7,6 +7,7 @@ namespace HybridId\Tests\Testing;
 use HybridId\HybridIdGenerator;
 use HybridId\IdGenerator;
 
+/** @since 4.0.0 */
 final class MockHybridIdGenerator implements IdGenerator
 {
     /** @var list<string> */

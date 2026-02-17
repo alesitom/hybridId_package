@@ -15,6 +15,8 @@ use HybridId\Profile;
  *          Methods toUUIDv8/v7/v4 reject prefixed IDs to prevent silent
  *          prefix loss that could lead to type confusion. Strip the prefix
  *          explicitly before converting and track it separately.
+ *
+ * @since 4.0.0
  */
 final class UuidConverter
 {
@@ -24,6 +26,7 @@ final class UuidConverter
     // UUIDv8 (RFC 9562 — lossless for compact/standard)
     // -------------------------------------------------------------------------
 
+    /** @since 4.0.0 */
     public static function toUUIDv8(string $hybridId): string
     {
         self::rejectPrefixed($hybridId, 'toUUIDv8');
@@ -61,6 +64,7 @@ final class UuidConverter
         return self::insertHyphens($hex);
     }
 
+    /** @since 4.0.0 */
     public static function fromUUIDv8(string $uuid): string
     {
         self::assertUuidFormat($uuid, 8);
@@ -102,6 +106,7 @@ final class UuidConverter
     // UUIDv7 (timestamp-preserving)
     // -------------------------------------------------------------------------
 
+    /** @since 4.0.0 */
     public static function toUUIDv7(string $hybridId): string
     {
         self::rejectPrefixed($hybridId, 'toUUIDv7');
@@ -129,6 +134,7 @@ final class UuidConverter
         return self::insertHyphens($hex);
     }
 
+    /** @since 4.0.0 */
     public static function fromUUIDv7(string $uuid, Profile|string $profile = Profile::Standard): string
     {
         self::assertUuidFormat($uuid, 7);
@@ -178,6 +184,8 @@ final class UuidConverter
      *
      * For standards-compliant conversions, prefer toUUIDv8() (lossless) or
      * toUUIDv7() (timestamp-preserving).
+     *
+     * @since 4.0.0
      */
     public static function toUUIDv4Format(string $hybridId): string
     {
@@ -211,6 +219,8 @@ final class UuidConverter
      *
      * Because v4-format conversion is lossy, you must supply the original timestamp
      * and node externally. When $timestampMs is null, current time is used.
+     *
+     * @since 4.0.0
      */
     public static function fromUUIDv4Format(
         string $uuid,
