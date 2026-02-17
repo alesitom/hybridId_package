@@ -149,14 +149,14 @@ final class HybridIdGenerator implements IdGenerator
         $profile = Profile::tryFrom($profileValue) ?? $profileValue;
         if (is_string($profile) && $reg->get($profile) === null) {
             throw new InvalidProfileException(
-                sprintf('Invalid HYBRID_ID_PROFILE: "%s"', $profileValue),
+                sprintf('Invalid HYBRID_ID_PROFILE: "%s"', self::truncateForMessage($profileValue)),
             );
         }
 
         $node = self::readEnv('HYBRID_ID_NODE');
         if ($node !== null && (strlen($node) !== 2 || !self::isBase62String($node))) {
             throw new \InvalidArgumentException(
-                sprintf('Invalid HYBRID_ID_NODE: "%s". Must be exactly 2 base62 characters.', $node),
+                sprintf('Invalid HYBRID_ID_NODE: "%s". Must be exactly 2 base62 characters.', self::truncateForMessage($node)),
             );
         }
 
@@ -197,6 +197,13 @@ final class HybridIdGenerator implements IdGenerator
         }
 
         return ($value !== false && $value !== '') ? $value : null;
+    }
+
+    private static function truncateForMessage(string $value, int $maxLength = 20): string
+    {
+        return strlen($value) > $maxLength
+            ? substr($value, 0, $maxLength) . '...'
+            : $value;
     }
 
     private static function defaultRegistry(): ProfileRegistry
