@@ -276,7 +276,7 @@ final class UuidConverter
         }
 
         if ($node !== null) {
-            if (strlen($node) !== 2 || strspn($node, '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz') !== 2) {
+            if (strlen($node) !== 2 || strspn($node, HybridIdGenerator::BASE62) !== 2) {
                 throw new InvalidIdException('Node must be exactly 2 base62 characters');
             }
             $nodeChars = $node;

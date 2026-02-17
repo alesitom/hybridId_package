@@ -13,7 +13,7 @@ use HybridId\Exception\NodeRequiredException;
 final class HybridIdGenerator implements IdGenerator
 {
     /** Base62 alphabet: digits, uppercase, lowercase (62 characters, URL-safe). */
-    private const string BASE62 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+    public const string BASE62 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
 
     /** Reverse lookup: character => position for O(1) decoding. */
     private const array BASE62_MAP = [
