@@ -58,11 +58,13 @@ final class HybridIdGenerator implements IdGenerator
     private int $lastTimestamp = 0;
 
     /**
-     * Maximum allowed drift (in ms) between the monotonic counter and wall-clock time.
+     * Default maximum allowed drift (in ms) between the monotonic counter and wall-clock time.
      * When exceeded, generation throws IdOverflowException to prevent unbounded
      * future-dated timestamps.
      */
-    private const int MAX_DRIFT_MS = 5000;
+    public const int DEFAULT_MAX_DRIFT_MS = 5000;
+
+    private readonly int $maxDriftMs;
 
     public function __construct(
         Profile|string $profile = Profile::Standard,
@@ -72,10 +74,18 @@ final class HybridIdGenerator implements IdGenerator
         ?ProfileRegistryInterface $registry = null,
         bool $blind = false,
         ?string $blindSecret = null,
+        int $maxDriftMs = self::DEFAULT_MAX_DRIFT_MS,
     ) {
         if (PHP_INT_SIZE < 8) {
             throw new \RuntimeException('HybridId requires 64-bit PHP');
         }
+
+        if ($maxDriftMs < 1) {
+            throw new \InvalidArgumentException(
+                sprintf('maxDriftMs must be a positive integer, got %d', $maxDriftMs),
+            );
+        }
+        $this->maxDriftMs = $maxDriftMs;
 
         $this->registry = $registry ?? self::defaultRegistry();
 
@@ -234,7 +244,7 @@ final class HybridIdGenerator implements IdGenerator
      * @note NOT thread-safe. Each thread/coroutine (Swoole, ReactPHP, Laravel Octane)
      *       must use its own HybridIdGenerator instance to avoid timestamp collisions.
      *
-     * @throws IdOverflowException If monotonic drift exceeds MAX_DRIFT_MS or maxIdLength exceeded
+     * @throws IdOverflowException If monotonic drift exceeds maxDriftMs or maxIdLength exceeded
      * @throws InvalidPrefixException If prefix format is invalid
      */
     #[\Override]
@@ -249,7 +259,7 @@ final class HybridIdGenerator implements IdGenerator
      * @note For multi-node deployments with more than a few hundred IDs/second,
      *       prefer standard() or extended() and set explicit node IDs.
      *
-     * @throws IdOverflowException If monotonic drift exceeds MAX_DRIFT_MS or maxIdLength exceeded
+     * @throws IdOverflowException If monotonic drift exceeds maxDriftMs or maxIdLength exceeded
      * @throws InvalidPrefixException If prefix format is invalid
      */
     public function compact(?string $prefix = null): string
@@ -260,7 +270,7 @@ final class HybridIdGenerator implements IdGenerator
     /**
      * Generate a standard ID (20 chars: 8ts + 2node + 10random, ~59.5 bits entropy).
      *
-     * @throws IdOverflowException If monotonic drift exceeds MAX_DRIFT_MS or maxIdLength exceeded
+     * @throws IdOverflowException If monotonic drift exceeds maxDriftMs or maxIdLength exceeded
      * @throws InvalidPrefixException If prefix format is invalid
      */
     public function standard(?string $prefix = null): string
@@ -271,7 +281,7 @@ final class HybridIdGenerator implements IdGenerator
     /**
      * Generate an extended ID (24 chars: 8ts + 2node + 14random, ~83.4 bits entropy).
      *
-     * @throws IdOverflowException If monotonic drift exceeds MAX_DRIFT_MS or maxIdLength exceeded
+     * @throws IdOverflowException If monotonic drift exceeds maxDriftMs or maxIdLength exceeded
      * @throws InvalidPrefixException If prefix format is invalid
      */
     public function extended(?string $prefix = null): string
@@ -286,10 +296,10 @@ final class HybridIdGenerator implements IdGenerator
      *
      * @note Large batches advance the monotonic counter, causing timestamp drift
      *       proportional to the batch size (e.g. 5,000 IDs ≈ 5s drift). The drift
-     *       cap (MAX_DRIFT_MS) will throw IdOverflowException if exceeded.
+     *       cap (maxDriftMs) will throw IdOverflowException if exceeded.
      *
      * @throws \InvalidArgumentException If count is out of range
-     * @throws IdOverflowException If monotonic drift exceeds MAX_DRIFT_MS
+     * @throws IdOverflowException If monotonic drift exceeds maxDriftMs
      * @throws InvalidPrefixException If prefix format is invalid
      *
      * @since 4.0.0
@@ -788,11 +798,11 @@ final class HybridIdGenerator implements IdGenerator
             // Cap forward drift to prevent unbounded future-dated timestamps under
             // sustained high throughput.
             $realNow = (int) (microtime(true) * 1000);
-            if ($now - $realNow > self::MAX_DRIFT_MS) {
+            if ($now - $realNow > $this->maxDriftMs) {
                 throw new IdOverflowException(
                     sprintf(
                         'Monotonic timestamp drift exceeds %dms. Reduce generation rate or use multiple instances.',
-                        self::MAX_DRIFT_MS,
+                        $this->maxDriftMs,
                     ),
                 );
             }
