@@ -31,9 +31,9 @@ final class MockHybridIdGenerator implements IdGenerator
     /**
      * Returns the next ID from the sequence.
      *
-     * The $prefix parameter is intentionally ignored — the mock returns exactly
-     * the IDs provided in the constructor. Include prefixes in the $ids array
-     * if needed.
+     * When $prefix is provided, the next ID must already include it
+     * (e.g. "usr_abc..."). If it doesn't, an exception is thrown so
+     * the developer can fix their mock setup.
      */
     public function generate(?string $prefix = null): string
     {
@@ -46,7 +46,21 @@ final class MockHybridIdGenerator implements IdGenerator
             );
         }
 
-        return $this->ids[$this->cursor++];
+        $id = $this->ids[$this->cursor++];
+
+        if ($prefix !== null && !str_starts_with($id, $prefix . '_')) {
+            throw new \LogicException(
+                sprintf(
+                    'MockHybridIdGenerator: generate() called with prefix "%s" but next ID "%s" '
+                    . 'does not start with "%s_". Include the prefix in your mock IDs.',
+                    $prefix,
+                    $id,
+                    $prefix,
+                ),
+            );
+        }
+
+        return $id;
     }
 
     public function generateBatch(int $count, ?string $prefix = null): array

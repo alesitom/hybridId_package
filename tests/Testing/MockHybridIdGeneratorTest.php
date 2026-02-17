@@ -35,11 +35,28 @@ final class MockHybridIdGeneratorTest extends TestCase
         $this->assertSame('id_two_1234567890AB', $mock->generate());
     }
 
-    public function testGenerateIgnoresPrefix(): void
+    public function testGenerateAcceptsPrefixedId(): void
+    {
+        $mock = new MockHybridIdGenerator(['usr_exactlyThisId123456']);
+
+        $this->assertSame('usr_exactlyThisId123456', $mock->generate('usr'));
+    }
+
+    public function testGenerateThrowsWhenPrefixMismatch(): void
     {
         $mock = new MockHybridIdGenerator(['exactlyThisId123456']);
 
-        $this->assertSame('exactlyThisId123456', $mock->generate('usr'));
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('does not start with "usr_"');
+
+        $mock->generate('usr');
+    }
+
+    public function testGenerateWithoutPrefixStillWorks(): void
+    {
+        $mock = new MockHybridIdGenerator(['exactlyThisId123456']);
+
+        $this->assertSame('exactlyThisId123456', $mock->generate());
     }
 
     public function testGenerateThrowsWhenExhausted(): void
