@@ -75,6 +75,7 @@ final class UuidConverter
         $nodeValue = self::safeHexdec(substr($hex, 13, 3));
 
         // Reconstruct custom_c (62 bits)
+        // Single hex digit (max 15): cannot overflow, safeHexdec not needed.
         $high2 = hexdec(substr($hex, 16, 1)) & 0x3;
         $low60 = self::safeHexdec(substr($hex, 17, 15));
         $customC = ($high2 << 60) | $low60;
@@ -145,6 +146,7 @@ final class UuidConverter
         $timestamp = self::safeHexdec(substr($hex, 0, 12));
         $nodeValue = self::safeHexdec(substr($hex, 13, 3));
 
+        // Single hex digit (max 15): cannot overflow, safeHexdec not needed.
         $high2 = hexdec(substr($hex, 16, 1)) & 0x3;
         $low58 = self::safeHexdec(substr($hex, 17, 15));
         $randomValue = ($high2 << 58) | $low58;
@@ -253,6 +255,7 @@ final class UuidConverter
             $nodeChars = HybridIdGenerator::encodeBase62($nodeValue, 2);
         }
 
+        // Single hex digit (max 15): cannot overflow, safeHexdec not needed.
         $high2 = hexdec(substr($hex, 16, 1)) & 0x3;
         $low58 = self::safeHexdec(substr($hex, 17, 15));
         $randomValue = ($high2 << 58) | $low58;
@@ -280,6 +283,7 @@ final class UuidConverter
 
         $hex = self::stripHyphens($uuid);
 
+        // Single hex digit (max 15): cannot overflow, safeHexdec not needed.
         $version = hexdec($hex[12]);
         if ($version !== $expectedVersion) {
             throw new InvalidIdException(
@@ -287,6 +291,7 @@ final class UuidConverter
             );
         }
 
+        // Single hex digit (max 15): cannot overflow, safeHexdec not needed.
         $variantNibble = hexdec($hex[16]);
         if (($variantNibble >> 2) !== 0b10) {
             throw new InvalidIdException('Invalid UUID variant: expected RFC 4122 variant (10xx)');
