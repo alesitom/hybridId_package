@@ -579,7 +579,10 @@ final class HybridIdGenerator implements IdGenerator
     public static function registerProfile(string $name, int $random): void
     {
         @trigger_error(
-            'HybridIdGenerator::registerProfile() is deprecated since 4.0.0. Use ProfileRegistry injection instead.',
+            'HybridIdGenerator::registerProfile() is deprecated since 4.0.0. '
+            . 'Migrate to: $reg = ProfileRegistry::withDefaults(); $reg->register("name", 10); '
+            . 'new HybridIdGenerator(registry: $reg). '
+            . 'Note: this method mutates the global registry only, not injected registries.',
             E_USER_DEPRECATED,
         );
         self::defaultRegistry()->register($name, $random);
@@ -595,7 +598,9 @@ final class HybridIdGenerator implements IdGenerator
     public static function resetProfiles(): void
     {
         @trigger_error(
-            'HybridIdGenerator::resetProfiles() is deprecated since 4.0.0. Use ProfileRegistry injection instead.',
+            'HybridIdGenerator::resetProfiles() is deprecated since 4.0.0. '
+            . 'Migrate to: create a fresh ProfileRegistry instance instead of resetting global state. '
+            . 'Note: this method resets the global registry only, not injected registries.',
             E_USER_DEPRECATED,
         );
         self::defaultRegistry()->reset();
