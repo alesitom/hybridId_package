@@ -144,7 +144,10 @@ final class HybridIdGenerator implements IdGenerator
      * Reads HYBRID_ID_PROFILE, HYBRID_ID_NODE, HYBRID_ID_REQUIRE_NODE,
      * HYBRID_ID_BLIND, HYBRID_ID_BLIND_SECRET, and HYBRID_ID_MAX_LENGTH
      * from the environment.
-     * Pairs well with vlucas/phpdotenv for .env file support.
+     *
+     * Read order: getenv() → $_ENV → $_SERVER. This ensures compatibility
+     * with putenv(), vlucas/phpdotenv v5+ (createImmutable writes to
+     * $_ENV/$_SERVER only), and web server directives (e.g. Nginx fastcgi_param).
      *
      * Security note: treat HYBRID_ID_NODE as sensitive configuration.
      * In shared hosting or containerized environments, ensure these
@@ -217,6 +220,9 @@ final class HybridIdGenerator implements IdGenerator
         $value = getenv($name, true);
         if ($value === false) {
             $value = getenv($name);
+        }
+        if ($value === false) {
+            $value = $_ENV[$name] ?? $_SERVER[$name] ?? false;
         }
 
         return ($value !== false && $value !== '') ? $value : null;
