@@ -763,10 +763,13 @@ final class HybridIdGenerator implements IdGenerator
 
         if ($this->blind) {
             $hmacInput = pack('J', $now) . ($config['node'] > 0 ? $this->node : '');
-            $hmacHex = hash_hmac('sha256', $hmacInput, $this->blindSecret);
+            $hmacBytes = hash_hmac('sha384', $hmacInput, $this->blindSecret, true);
             $opaqueLen = $config['ts'] + $config['node'];
-            $hmacValue = hexdec(substr($hmacHex, 0, 15)) % (62 ** $opaqueLen);
-            $opaquePrefix = self::encodeBase62($hmacValue, $opaqueLen);
+            $opaquePrefix = '';
+            for ($i = 0; $i < $opaqueLen; $i++) {
+                $val = (ord($hmacBytes[$i * 2]) << 8) | ord($hmacBytes[$i * 2 + 1]);
+                $opaquePrefix .= self::BASE62[$val % 62];
+            }
             $id = $opaquePrefix . $random;
         } else {
             $timestamp = self::encodeBase62($now, $config['ts']);
