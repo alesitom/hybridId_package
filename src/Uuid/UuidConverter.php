@@ -366,6 +366,9 @@ final class UuidConverter
 
     private static function safeHexdec(string $hex): int
     {
+        if (strlen($hex) > 15) {
+            throw new InvalidIdException('Hex value exceeds 64-bit integer range');
+        }
         $result = hexdec($hex);
         if (is_float($result)) {
             throw new InvalidIdException('Hex value exceeds 64-bit integer range');
