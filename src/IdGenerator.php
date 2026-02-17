@@ -11,7 +11,7 @@ interface IdGenerator
     /**
      * Generate multiple IDs in a single call with guaranteed monotonic ordering.
      *
-     * @param int<1, 100000> $count Number of IDs to generate
+     * @param int<1, 10000> $count Number of IDs to generate
      * @param string|null $prefix Optional Stripe-style prefix
      * @return list<string> Array of unique, monotonically ordered IDs
      *

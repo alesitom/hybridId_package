@@ -138,10 +138,10 @@ final class ApplicationTest extends TestCase
         $output = new BufferedOutput();
         $app = new Application($output);
 
-        $exitCode = $app->run(['hybrid-id', 'generate', '-n', '100001']);
+        $exitCode = $app->run(['hybrid-id', 'generate', '-n', '10001']);
 
         $this->assertSame(1, $exitCode);
-        $this->assertStringContainsString('must not exceed 100,000', $output->getErrors()[0]);
+        $this->assertStringContainsString('must not exceed 10,000', $output->getErrors()[0]);
     }
 
     public function testGenerateRejectsNonIntegerCount(): void

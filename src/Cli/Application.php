@@ -97,8 +97,8 @@ final class Application
             $this->output->error('Count must be a positive integer');
             return 1;
         }
-        if ($count > 100000) {
-            $this->output->error('Count must not exceed 100,000');
+        if ($count > 10000) {
+            $this->output->error('Count must not exceed 10,000');
             return 1;
         }
 
