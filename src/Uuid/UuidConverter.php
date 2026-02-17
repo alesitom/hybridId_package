@@ -158,19 +158,37 @@ final class UuidConverter
     }
 
     // -------------------------------------------------------------------------
-    // UUIDv4 (lossy both directions)
+    // UUIDv4-format (lossy both directions)
+    //
+    // WARNING: These methods produce/consume UUIDs with v4 structure
+    // (version=4, variant=10xx) but the content is deterministically derived
+    // from HybridId data — NOT 122 bits of cryptographic randomness as
+    // required by RFC 9562 §5.4. Do NOT use the output where a true UUIDv4
+    // is expected. For standards-compliant conversions use toUUIDv8()
+    // (lossless) or toUUIDv7() (timestamp-preserving).
     // -------------------------------------------------------------------------
 
-    public static function toUUIDv4(string $hybridId): string
+    /**
+     * Convert a HybridId to a UUID with v4 formatting (version=4, variant=10xx).
+     *
+     * The output is NOT a true random UUIDv4 per RFC 9562 — it deterministically
+     * encodes HybridId data into UUID v4 structure. Conversion is lossy: the
+     * original HybridId cannot be fully recovered without supplying the timestamp
+     * and node externally via fromUUIDv4Format().
+     *
+     * For standards-compliant conversions, prefer toUUIDv8() (lossless) or
+     * toUUIDv7() (timestamp-preserving).
+     */
+    public static function toUUIDv4Format(string $hybridId): string
     {
-        self::rejectPrefixed($hybridId, 'toUUIDv4');
+        self::rejectPrefixed($hybridId, 'toUUIDv4Format');
 
         $parsed = HybridIdGenerator::parse($hybridId);
         if (!$parsed['valid']) {
-            throw new InvalidIdException('Invalid HybridId: cannot convert to UUIDv4');
+            throw new InvalidIdException('Invalid HybridId: cannot convert to UUIDv4 format');
         }
 
-        self::assertSupportedProfile($parsed['profile'], 'toUUIDv4');
+        self::assertSupportedProfile($parsed['profile'], 'toUUIDv4Format');
 
         $timestamp = $parsed['timestamp'];
         $nodeValue = $parsed['node'] !== null ? HybridIdGenerator::decodeBase62($parsed['node']) : 0;
@@ -188,7 +206,13 @@ final class UuidConverter
         return self::insertHyphens($hex);
     }
 
-    public static function fromUUIDv4(
+    /**
+     * Reconstruct a HybridId from a UUID previously created with toUUIDv4Format().
+     *
+     * Because v4-format conversion is lossy, you must supply the original timestamp
+     * and node externally. When $timestampMs is null, current time is used.
+     */
+    public static function fromUUIDv4Format(
         string $uuid,
         Profile|string $profile = Profile::Standard,
         ?int $timestampMs = null,
