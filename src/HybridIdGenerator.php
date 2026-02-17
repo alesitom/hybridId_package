@@ -132,7 +132,8 @@ final class HybridIdGenerator implements IdGenerator
      * Create an instance configured from environment variables.
      *
      * Reads HYBRID_ID_PROFILE, HYBRID_ID_NODE, HYBRID_ID_REQUIRE_NODE,
-     * HYBRID_ID_BLIND, and HYBRID_ID_BLIND_SECRET from the environment.
+     * HYBRID_ID_BLIND, HYBRID_ID_BLIND_SECRET, and HYBRID_ID_MAX_LENGTH
+     * from the environment.
      * Pairs well with vlucas/phpdotenv for .env file support.
      *
      * Security note: treat HYBRID_ID_NODE as sensitive configuration.
@@ -174,9 +175,21 @@ final class HybridIdGenerator implements IdGenerator
             throw new \InvalidArgumentException('HYBRID_ID_BLIND_SECRET must be valid base64');
         }
 
+        $maxLengthEnv = self::readEnv('HYBRID_ID_MAX_LENGTH');
+        $maxIdLength = null;
+        if ($maxLengthEnv !== null) {
+            $maxIdLength = filter_var($maxLengthEnv, FILTER_VALIDATE_INT);
+            if ($maxIdLength === false || $maxIdLength < 1) {
+                throw new \InvalidArgumentException(
+                    sprintf('Invalid HYBRID_ID_MAX_LENGTH: "%s". Must be a positive integer.', self::truncateForMessage($maxLengthEnv)),
+                );
+            }
+        }
+
         return new self(
             profile: $profile,
             node: $node,
+            maxIdLength: $maxIdLength,
             requireExplicitNode: $requireExplicit,
             registry: $reg,
             blind: $blind,
