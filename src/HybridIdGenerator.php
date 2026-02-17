@@ -82,7 +82,7 @@ final class HybridIdGenerator implements IdGenerator
 
         if ($node !== null) {
             if (strlen($node) !== 2 || !self::isBase62String($node)) {
-                throw new \InvalidArgumentException('Node must be exactly 2 base62 characters (0-9, A-Z, a-z)');
+                throw new InvalidIdException('Node must be exactly 2 base62 characters (0-9, A-Z, a-z)');
             }
             $this->node = $node;
         } elseif ($blind) {
