@@ -72,7 +72,7 @@ final class HybridIdGenerator implements IdGenerator
         $config = $this->registry->get($profileName);
         if ($config === null) {
             throw new InvalidProfileException(
-                'Invalid profile. Valid profiles: ' . implode(', ', $this->registry->all()),
+                sprintf('Unknown profile "%s"', $profileName),
             );
         }
         $this->profile = $profileName;
@@ -529,7 +529,7 @@ final class HybridIdGenerator implements IdGenerator
 
         if ($config === null) {
             throw new InvalidProfileException(
-                'Invalid profile. Valid profiles: ' . implode(', ', self::profiles()),
+                sprintf('Unknown profile "%s"', $profileName),
             );
         }
 
@@ -548,7 +548,7 @@ final class HybridIdGenerator implements IdGenerator
 
         if ($config === null) {
             throw new InvalidProfileException(
-                'Invalid profile. Valid profiles: ' . implode(', ', self::profiles()),
+                sprintf('Unknown profile "%s"', $profileName),
             );
         }
 

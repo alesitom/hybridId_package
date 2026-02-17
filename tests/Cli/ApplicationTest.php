@@ -119,7 +119,7 @@ final class ApplicationTest extends TestCase
 
         $this->assertSame(1, $exitCode);
         $this->assertNotEmpty($output->getErrors());
-        $this->assertStringContainsString('Invalid profile', $output->getErrors()[0]);
+        $this->assertStringContainsString('Unknown profile', $output->getErrors()[0]);
     }
 
     public function testGenerateRejectsZeroCount(): void

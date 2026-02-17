@@ -117,7 +117,7 @@ final class HybridIdGeneratorTest extends TestCase
     public function testConstructorRejectsInvalidProfile(): void
     {
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('Invalid profile');
+        $this->expectExceptionMessage('Unknown profile');
 
         new HybridIdGenerator(profile: 'ultra', node: 'T1');
     }
@@ -1099,7 +1099,7 @@ final class HybridIdGeneratorTest extends TestCase
     public function testRecommendedColumnSizeRejectsInvalidProfile(): void
     {
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('Invalid profile');
+        $this->expectExceptionMessage('Unknown profile');
 
         HybridIdGenerator::recommendedColumnSize('nonexistent');
     }
