@@ -223,11 +223,20 @@ final class HybridIdGenerator implements IdGenerator
         return $this->generateWithProfile('extended', $prefix);
     }
 
+    /**
+     * Generate multiple IDs in a single call.
+     *
+     * @param int<1, 10000> $count Number of IDs to generate (max 10,000)
+     *
+     * @note Large batches advance the monotonic counter, causing timestamp drift
+     *       proportional to the batch size (e.g. 5,000 IDs ≈ 5s drift). The drift
+     *       cap (MAX_DRIFT_MS) will throw IdOverflowException if exceeded.
+     */
     public function generateBatch(int $count, ?string $prefix = null): array
     {
-        if ($count < 1 || $count > 100_000) {
+        if ($count < 1 || $count > 10_000) {
             throw new \InvalidArgumentException(
-                sprintf('Batch count must be between 1 and 100,000, got %d', $count),
+                sprintf('Batch count must be between 1 and 10,000, got %d', $count),
             );
         }
 

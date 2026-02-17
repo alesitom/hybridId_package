@@ -82,7 +82,7 @@ final class MockHybridIdGeneratorTest extends TestCase
 
         $this->expectException(\InvalidArgumentException::class);
 
-        $mock->generateBatch(100_001);
+        $mock->generateBatch(10_001);
     }
 
     public function testGenerateBatchAdvancesCursor(): void

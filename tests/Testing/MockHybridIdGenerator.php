@@ -51,9 +51,9 @@ final class MockHybridIdGenerator implements IdGenerator
 
     public function generateBatch(int $count, ?string $prefix = null): array
     {
-        if ($count < 1 || $count > 100_000) {
+        if ($count < 1 || $count > 10_000) {
             throw new \InvalidArgumentException(
-                sprintf('Batch count must be between 1 and 100,000, got %d', $count),
+                sprintf('Batch count must be between 1 and 10,000, got %d', $count),
             );
         }
 

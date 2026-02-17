@@ -1601,7 +1601,7 @@ final class HybridIdGeneratorTest extends TestCase
 
         $this->expectException(\InvalidArgumentException::class);
 
-        $gen->generateBatch(100_001);
+        $gen->generateBatch(10_001);
     }
 
     public function testGenerateBatchSingleIdWorks(): void
