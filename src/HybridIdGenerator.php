@@ -71,6 +71,7 @@ final class HybridIdGenerator implements IdGenerator
         bool $requireExplicitNode = true,
         ?ProfileRegistryInterface $registry = null,
         bool $blind = false,
+        ?string $blindSecret = null,
     ) {
         if (PHP_INT_SIZE < 8) {
             throw new \RuntimeException('HybridId requires 64-bit PHP');
@@ -87,8 +88,13 @@ final class HybridIdGenerator implements IdGenerator
         }
         $this->profile = $profileName;
         $this->profileConfig = $config;
-        $this->blind = $blind;
-        $this->blindSecret = $blind ? self::secureRandomBytes(32) : null;
+        $this->blind = $blind || $blindSecret !== null;
+        if ($blindSecret !== null && strlen($blindSecret) < 32) {
+            throw new \InvalidArgumentException(
+                sprintf('blindSecret must be at least 32 bytes, got %d', strlen($blindSecret)),
+            );
+        }
+        $this->blindSecret = $this->blind ? ($blindSecret ?? self::secureRandomBytes(32)) : null;
 
         if ($node !== null) {
             if (strlen($node) !== 2 || !self::isBase62String($node)) {
@@ -126,7 +132,7 @@ final class HybridIdGenerator implements IdGenerator
      * Create an instance configured from environment variables.
      *
      * Reads HYBRID_ID_PROFILE, HYBRID_ID_NODE, HYBRID_ID_REQUIRE_NODE,
-     * and HYBRID_ID_BLIND from the environment.
+     * HYBRID_ID_BLIND, and HYBRID_ID_BLIND_SECRET from the environment.
      * Pairs well with vlucas/phpdotenv for .env file support.
      *
      * Security note: treat HYBRID_ID_NODE as sensitive configuration.
@@ -162,12 +168,19 @@ final class HybridIdGenerator implements IdGenerator
         $blindEnv = self::readEnv('HYBRID_ID_BLIND');
         $blind = ($blindEnv !== null && $blindEnv !== '0');
 
+        $blindSecretEnv = self::readEnv('HYBRID_ID_BLIND_SECRET');
+        $blindSecret = $blindSecretEnv !== null ? base64_decode($blindSecretEnv, true) : null;
+        if ($blindSecretEnv !== null && ($blindSecret === false || $blindSecret === '')) {
+            throw new \InvalidArgumentException('HYBRID_ID_BLIND_SECRET must be valid base64');
+        }
+
         return new self(
             profile: $profile,
             node: $node,
             requireExplicitNode: $requireExplicit,
             registry: $reg,
             blind: $blind,
+            blindSecret: $blindSecret ?: null,
         );
     }
 
