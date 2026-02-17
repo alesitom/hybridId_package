@@ -1531,6 +1531,14 @@ final class HybridIdGeneratorTest extends TestCase
         HybridIdGenerator::encodeBase62(-1, 8);
     }
 
+    public function testEncodeBase62ThrowsOnZeroLength(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Length must be at least 1');
+
+        HybridIdGenerator::encodeBase62(0, 0);
+    }
+
     // -------------------------------------------------------------------------
     // Batch generation (#118)
     // -------------------------------------------------------------------------

@@ -28,6 +28,8 @@ final class HybridIdGenerator implements IdGenerator
 
     private const string PREFIX_SEPARATOR = '_';
     private const int PREFIX_MAX_LENGTH = 8;
+    private const string REGEX_ID_CHARS = '/^[a-zA-Z0-9_]+$/';
+    private const string REGEX_PREFIX = '/^[a-z][a-z0-9]*$/';
 
     /**
      * Maximum possible ID length: PREFIX_MAX_LENGTH (8) + separator (1) + max body (138).
@@ -306,7 +308,7 @@ final class HybridIdGenerator implements IdGenerator
             return false;
         }
 
-        if (!preg_match('/^[a-zA-Z0-9_]+$/', $id)) {
+        if (!preg_match(self::REGEX_ID_CHARS, $id)) {
             return false;
         }
 
@@ -397,7 +399,7 @@ final class HybridIdGenerator implements IdGenerator
             'node' => null, 'random' => null,
         ];
 
-        if ($id === '' || strlen($id) > self::MAX_ID_LENGTH || !preg_match('/^[a-zA-Z0-9_]+$/', $id)) {
+        if ($id === '' || strlen($id) > self::MAX_ID_LENGTH || !preg_match(self::REGEX_ID_CHARS, $id)) {
             return $nullResult;
         }
 
@@ -759,6 +761,10 @@ final class HybridIdGenerator implements IdGenerator
      */
     public static function encodeBase62(int $num, int $length): string
     {
+        if ($length < 1) {
+            throw new \InvalidArgumentException('Length must be at least 1');
+        }
+
         if ($num < 0) {
             throw new IdOverflowException('Cannot encode negative value');
         }
@@ -830,14 +836,15 @@ final class HybridIdGenerator implements IdGenerator
     private static function randomBase62(int $length): string
     {
         $limit = 248; // largest multiple of 62 ≤ 255 (4 × 62), eliminates modulo bias
-        $chars = [];
+        $chars = '';
+        $charCount = 0;
         $buffer = self::secureRandomBytes((int) ceil($length * 1.25));
         $pos = 0;
         $bufLen = strlen($buffer);
 
-        while (count($chars) < $length) {
+        while ($charCount < $length) {
             if ($pos >= $bufLen) {
-                $buffer = self::secureRandomBytes((int) ceil(($length - count($chars)) * 1.25));
+                $buffer = self::secureRandomBytes((int) ceil(($length - $charCount) * 1.25));
                 $pos = 0;
                 $bufLen = strlen($buffer);
             }
@@ -845,11 +852,12 @@ final class HybridIdGenerator implements IdGenerator
             $byte = ord($buffer[$pos++]);
 
             if ($byte < $limit) {
-                $chars[] = self::BASE62[$byte % 62];
+                $chars .= self::BASE62[$byte % 62];
+                $charCount++;
             }
         }
 
-        return implode('', $chars);
+        return $chars;
     }
 
     private static function isBase62String(string $str): bool
@@ -883,7 +891,7 @@ final class HybridIdGenerator implements IdGenerator
     {
         return $prefix !== ''
             && strlen($prefix) <= self::PREFIX_MAX_LENGTH
-            && preg_match('/^[a-z][a-z0-9]*$/', $prefix) === 1;
+            && preg_match(self::REGEX_PREFIX, $prefix) === 1;
     }
 
     private static function validatePrefix(string $prefix): void
@@ -923,6 +931,14 @@ final class HybridIdGenerator implements IdGenerator
             return $id;
         }
 
-        return substr($id, $pos + 1);
+        $body = substr($id, $pos + 1);
+
+        // Multiple underscores → not a valid prefixed ID, return unchanged
+        // to fail downstream validation cleanly.
+        if (str_contains($body, self::PREFIX_SEPARATOR)) {
+            return $id;
+        }
+
+        return $body;
     }
 }
