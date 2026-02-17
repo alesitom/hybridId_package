@@ -36,6 +36,7 @@ final class MockHybridIdGenerator implements IdGenerator
      * (e.g. "usr_abc..."). If it doesn't, an exception is thrown so
      * the developer can fix their mock setup.
      */
+    #[\Override]
     public function generate(?string $prefix = null): string
     {
         if ($this->cursor >= count($this->ids)) {
@@ -64,6 +65,7 @@ final class MockHybridIdGenerator implements IdGenerator
         return $id;
     }
 
+    #[\Override]
     public function generateBatch(int $count, ?string $prefix = null): array
     {
         if ($count < 1 || $count > 10_000) {
@@ -80,11 +82,13 @@ final class MockHybridIdGenerator implements IdGenerator
         return $ids;
     }
 
+    #[\Override]
     public function bodyLength(): int
     {
         return $this->bodyLength;
     }
 
+    #[\Override]
     public function validate(string $id, ?string $expectedPrefix = null): bool
     {
         return HybridIdGenerator::isValid($id)

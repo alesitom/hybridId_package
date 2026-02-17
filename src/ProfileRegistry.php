@@ -32,16 +32,19 @@ final class ProfileRegistry implements ProfileRegistryInterface
         return new self();
     }
 
+    #[\Override]
     public function get(string $name): ?array
     {
         return self::BUILT_IN[$name] ?? $this->custom[$name] ?? null;
     }
 
+    #[\Override]
     public function getByLength(int $length): ?string
     {
         return self::BUILT_IN_LENGTH_MAP[$length] ?? $this->customLengthMap[$length] ?? null;
     }
 
+    #[\Override]
     public function register(string $name, int $random): void
     {
         if (!preg_match('/^[a-z][a-z0-9]*$/', $name)) {
@@ -76,11 +79,13 @@ final class ProfileRegistry implements ProfileRegistryInterface
         $this->customLengthMap[$length] = $name;
     }
 
+    #[\Override]
     public function all(): array
     {
         return [...array_keys(self::BUILT_IN), ...array_keys($this->custom)];
     }
 
+    #[\Override]
     public function reset(): void
     {
         $this->custom = [];

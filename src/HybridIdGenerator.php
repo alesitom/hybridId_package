@@ -224,6 +224,7 @@ final class HybridIdGenerator implements IdGenerator
      * @throws IdOverflowException If monotonic drift exceeds MAX_DRIFT_MS or maxIdLength exceeded
      * @throws InvalidPrefixException If prefix format is invalid
      */
+    #[\Override]
     public function generate(?string $prefix = null): string
     {
         return $this->generateWithProfile($this->profile, $prefix);
@@ -280,6 +281,7 @@ final class HybridIdGenerator implements IdGenerator
      *
      * @since 4.0.0
      */
+    #[\Override]
     public function generateBatch(int $count, ?string $prefix = null): array
     {
         if ($count < 1 || $count > 10_000) {
@@ -313,6 +315,7 @@ final class HybridIdGenerator implements IdGenerator
     /**
      * Get the body length (without prefix) for this instance's profile.
      */
+    #[\Override]
     public function bodyLength(): int
     {
         return $this->profileConfig['length'];
@@ -343,6 +346,7 @@ final class HybridIdGenerator implements IdGenerator
      * @param string $id The ID to validate
      * @param string|null $expectedPrefix When provided, the ID's prefix must match exactly
      */
+    #[\Override]
     public function validate(string $id, ?string $expectedPrefix = null): bool
     {
         // Early guards
