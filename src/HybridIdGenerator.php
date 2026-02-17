@@ -371,6 +371,10 @@ final class HybridIdGenerator implements IdGenerator
     /**
      * Validate that a string is a well-formed HybridId of any known profile length.
      * Handles both prefixed and unprefixed IDs.
+     *
+     * @note Uses the global default registry — custom profiles registered via an
+     *       injected ProfileRegistry are not visible here. Use validate() on an
+     *       instance instead when working with custom profiles.
      */
     public static function isValid(string $id): bool
     {
@@ -411,6 +415,9 @@ final class HybridIdGenerator implements IdGenerator
      *
      * Always returns all keys regardless of validity. When 'valid' is false,
      * component keys (profile, timestamp, datetime, node, random) are null.
+     *
+     * @note Uses the global default registry — custom profiles registered via an
+     *       injected ProfileRegistry are not visible here.
      *
      * @return array{valid: bool, prefix: ?string, body: ?string, profile: ?string, timestamp: ?int, datetime: ?\DateTimeImmutable, node: ?string, random: ?string}
      *
@@ -544,6 +551,9 @@ final class HybridIdGenerator implements IdGenerator
     /**
      * Detect which profile a HybridId belongs to, or null if invalid.
      * Handles both prefixed and unprefixed IDs.
+     *
+     * @note Uses the global default registry — custom profiles registered via an
+     *       injected ProfileRegistry are not visible here.
      */
     public static function detectProfile(string $id): ?string
     {
