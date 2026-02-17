@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [4.1.0] - 2026-02-17
+
+### Added
+- `blindSecret` constructor parameter for external key injection, rotation, and multi-instance coordination (#162)
+- `HYBRID_ID_BLIND_SECRET` env var support (base64-encoded) in `fromEnv()` (#162)
+- `HybridIdGenerator::BASE62` constant promoted to public (#168)
+- `#[\Override]` attributes on all interface implementations (#170)
+- Blind mode + `maxIdLength` constraint tests (#169)
+
+### Changed
+- Blind mode HMAC upgraded from SHA-256 to SHA-384 with per-character generation, reducing modulo bias from ~37% to ~0.003% (#161)
+- Batch count limit aligned to 10,000 across `IdGenerator` interface, `HybridIdGenerator`, and CLI (#164)
+- `fromEnv()` exception messages now truncate env var values to 20 chars (#166)
+- Passing `blindSecret` implicitly enables blind mode without requiring `blind: true`
+
+### Fixed
+- `safeHexdec()` now validates hex string length before `hexdec()` call (#165)
+
+### Documentation
+- `fromUUIDv4Format()`: added `@warning` about silent timestamp fallback when `$timestampMs` is null (#167)
+- Blind mode: documented ordering analysis limitation — sequential IDs reveal relative generation order (#163)
+- `parse()`: clarified that prefix/body are returned for debugging when `valid` is false (#171)
+- `encodeBase62()`/`decodeBase62()`: replaced contradictory `@internal` with `@api` (#172)
+
 ## [4.0.0] - 2026-02-17
 
 ### Added
@@ -211,7 +235,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - Configurable entropy profiles
 - Time-sortable IDs with millisecond precision
 
-[Unreleased]: https://github.com/alesitom/hybrid-id/compare/v3.2.2...HEAD
+[4.1.0]: https://github.com/alesitom/hybrid-id/compare/v4.0.0...v4.1.0
+[4.0.0]: https://github.com/alesitom/hybrid-id/compare/v3.2.2...v4.0.0
 [3.2.2]: https://github.com/alesitom/hybrid-id/compare/v3.2.1...v3.2.2
 [3.2.1]: https://github.com/alesitom/hybrid-id/compare/v3.2.0...v3.2.1
 [3.2.0]: https://github.com/alesitom/hybrid-id/compare/v3.1.1...v3.2.0

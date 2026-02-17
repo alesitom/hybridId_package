@@ -13,7 +13,7 @@ use HybridId\Exception\NodeRequiredException;
 final class HybridIdGenerator implements IdGenerator
 {
     /** Base62 alphabet: digits, uppercase, lowercase (62 characters, URL-safe). */
-    private const string BASE62 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+    public const string BASE62 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
 
     /** Reverse lookup: character => position for O(1) decoding. */
     private const array BASE62_MAP = [
@@ -71,6 +71,7 @@ final class HybridIdGenerator implements IdGenerator
         bool $requireExplicitNode = true,
         ?ProfileRegistryInterface $registry = null,
         bool $blind = false,
+        ?string $blindSecret = null,
     ) {
         if (PHP_INT_SIZE < 8) {
             throw new \RuntimeException('HybridId requires 64-bit PHP');
@@ -87,8 +88,13 @@ final class HybridIdGenerator implements IdGenerator
         }
         $this->profile = $profileName;
         $this->profileConfig = $config;
-        $this->blind = $blind;
-        $this->blindSecret = $blind ? self::secureRandomBytes(32) : null;
+        $this->blind = $blind || $blindSecret !== null;
+        if ($blindSecret !== null && strlen($blindSecret) < 32) {
+            throw new \InvalidArgumentException(
+                sprintf('blindSecret must be at least 32 bytes, got %d', strlen($blindSecret)),
+            );
+        }
+        $this->blindSecret = $this->blind ? ($blindSecret ?? self::secureRandomBytes(32)) : null;
 
         if ($node !== null) {
             if (strlen($node) !== 2 || !self::isBase62String($node)) {
@@ -126,7 +132,7 @@ final class HybridIdGenerator implements IdGenerator
      * Create an instance configured from environment variables.
      *
      * Reads HYBRID_ID_PROFILE, HYBRID_ID_NODE, HYBRID_ID_REQUIRE_NODE,
-     * and HYBRID_ID_BLIND from the environment.
+     * HYBRID_ID_BLIND, and HYBRID_ID_BLIND_SECRET from the environment.
      * Pairs well with vlucas/phpdotenv for .env file support.
      *
      * Security note: treat HYBRID_ID_NODE as sensitive configuration.
@@ -143,14 +149,14 @@ final class HybridIdGenerator implements IdGenerator
         $profile = Profile::tryFrom($profileValue) ?? $profileValue;
         if (is_string($profile) && $reg->get($profile) === null) {
             throw new InvalidProfileException(
-                sprintf('Invalid HYBRID_ID_PROFILE: "%s"', $profileValue),
+                sprintf('Invalid HYBRID_ID_PROFILE: "%s"', self::truncateForMessage($profileValue)),
             );
         }
 
         $node = self::readEnv('HYBRID_ID_NODE');
         if ($node !== null && (strlen($node) !== 2 || !self::isBase62String($node))) {
             throw new \InvalidArgumentException(
-                sprintf('Invalid HYBRID_ID_NODE: "%s". Must be exactly 2 base62 characters.', $node),
+                sprintf('Invalid HYBRID_ID_NODE: "%s". Must be exactly 2 base62 characters.', self::truncateForMessage($node)),
             );
         }
 
@@ -162,12 +168,19 @@ final class HybridIdGenerator implements IdGenerator
         $blindEnv = self::readEnv('HYBRID_ID_BLIND');
         $blind = ($blindEnv !== null && $blindEnv !== '0');
 
+        $blindSecretEnv = self::readEnv('HYBRID_ID_BLIND_SECRET');
+        $blindSecret = $blindSecretEnv !== null ? base64_decode($blindSecretEnv, true) : null;
+        if ($blindSecretEnv !== null && ($blindSecret === false || $blindSecret === '')) {
+            throw new \InvalidArgumentException('HYBRID_ID_BLIND_SECRET must be valid base64');
+        }
+
         return new self(
             profile: $profile,
             node: $node,
             requireExplicitNode: $requireExplicit,
             registry: $reg,
             blind: $blind,
+            blindSecret: $blindSecret ?: null,
         );
     }
 
@@ -184,6 +197,13 @@ final class HybridIdGenerator implements IdGenerator
         }
 
         return ($value !== false && $value !== '') ? $value : null;
+    }
+
+    private static function truncateForMessage(string $value, int $maxLength = 20): string
+    {
+        return strlen($value) > $maxLength
+            ? substr($value, 0, $maxLength) . '...'
+            : $value;
     }
 
     private static function defaultRegistry(): ProfileRegistry
@@ -204,6 +224,7 @@ final class HybridIdGenerator implements IdGenerator
      * @throws IdOverflowException If monotonic drift exceeds MAX_DRIFT_MS or maxIdLength exceeded
      * @throws InvalidPrefixException If prefix format is invalid
      */
+    #[\Override]
     public function generate(?string $prefix = null): string
     {
         return $this->generateWithProfile($this->profile, $prefix);
@@ -260,6 +281,7 @@ final class HybridIdGenerator implements IdGenerator
      *
      * @since 4.0.0
      */
+    #[\Override]
     public function generateBatch(int $count, ?string $prefix = null): array
     {
         if ($count < 1 || $count > 10_000) {
@@ -293,6 +315,7 @@ final class HybridIdGenerator implements IdGenerator
     /**
      * Get the body length (without prefix) for this instance's profile.
      */
+    #[\Override]
     public function bodyLength(): int
     {
         return $this->profileConfig['length'];
@@ -323,6 +346,7 @@ final class HybridIdGenerator implements IdGenerator
      * @param string $id The ID to validate
      * @param string|null $expectedPrefix When provided, the ID's prefix must match exactly
      */
+    #[\Override]
     public function validate(string $id, ?string $expectedPrefix = null): bool
     {
         // Early guards
@@ -414,7 +438,9 @@ final class HybridIdGenerator implements IdGenerator
      * Parse a HybridId into all its components in a single pass.
      *
      * Always returns all keys regardless of validity. When 'valid' is false,
-     * component keys (profile, timestamp, datetime, node, random) are null.
+     * component keys (profile, timestamp, datetime, node, random) are null
+     * but prefix and body may still be populated for debugging purposes.
+     * Do not expose parse() results directly via public APIs.
      *
      * @note Uses the global default registry — custom profiles registered via an
      *       injected ProfileRegistry are not visible here.
@@ -761,12 +787,18 @@ final class HybridIdGenerator implements IdGenerator
 
         $random = self::randomBase62($config['random']);
 
+        // Blind mode: HMAC replaces timestamp+node with opaque chars of equal length.
+        // Hides absolute time, but sequential IDs from the same instance still reveal
+        // relative generation order (monotonic input → deterministic HMAC ordering).
         if ($this->blind) {
             $hmacInput = pack('J', $now) . ($config['node'] > 0 ? $this->node : '');
-            $hmacHex = hash_hmac('sha256', $hmacInput, $this->blindSecret);
+            $hmacBytes = hash_hmac('sha384', $hmacInput, $this->blindSecret, true);
             $opaqueLen = $config['ts'] + $config['node'];
-            $hmacValue = hexdec(substr($hmacHex, 0, 15)) % (62 ** $opaqueLen);
-            $opaquePrefix = self::encodeBase62($hmacValue, $opaqueLen);
+            $opaquePrefix = '';
+            for ($i = 0; $i < $opaqueLen; $i++) {
+                $val = (ord($hmacBytes[$i * 2]) << 8) | ord($hmacBytes[$i * 2 + 1]);
+                $opaquePrefix .= self::BASE62[$val % 62];
+            }
             $id = $opaquePrefix . $random;
         } else {
             $timestamp = self::encodeBase62($now, $config['ts']);
@@ -813,7 +845,7 @@ final class HybridIdGenerator implements IdGenerator
     /**
      * Encode an integer to base62 string with fixed length.
      *
-     * @internal Public for UuidConverter access. Stable API — safe to use.
+     * @api Stable — public for UuidConverter and external use.
      *
      * @throws \InvalidArgumentException If length < 1
      * @throws IdOverflowException If value is negative or exceeds length capacity
@@ -854,7 +886,7 @@ final class HybridIdGenerator implements IdGenerator
     /**
      * Decode a base62 string to integer.
      *
-     * @internal Public for UuidConverter access. Stable API — safe to use.
+     * @api Stable — public for UuidConverter and external use.
      *
      * @throws InvalidIdException If string is empty or contains invalid characters
      * @throws IdOverflowException If value exceeds 64-bit integer range

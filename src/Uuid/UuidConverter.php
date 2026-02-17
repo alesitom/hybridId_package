@@ -243,7 +243,11 @@ final class UuidConverter
      * Reconstruct a HybridId from a UUID previously created with toUUIDv4Format().
      *
      * Because v4-format conversion is lossy, you must supply the original timestamp
-     * and node externally. When $timestampMs is null, current time is used.
+     * and node externally.
+     *
+     * @warning When $timestampMs is null, the current wall-clock time is injected.
+     *          The resulting HybridId will appear to have been created "now", not at
+     *          the original generation time. Always pass the real timestamp when known.
      *
      * @throws InvalidIdException If UUID format, version, or node is invalid
      * @throws IdOverflowException If timestamp exceeds encodable range
@@ -272,7 +276,7 @@ final class UuidConverter
         }
 
         if ($node !== null) {
-            if (strlen($node) !== 2 || strspn($node, '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz') !== 2) {
+            if (strlen($node) !== 2 || strspn($node, HybridIdGenerator::BASE62) !== 2) {
                 throw new InvalidIdException('Node must be exactly 2 base62 characters');
             }
             $nodeChars = $node;
@@ -366,6 +370,9 @@ final class UuidConverter
 
     private static function safeHexdec(string $hex): int
     {
+        if (strlen($hex) > 15) {
+            throw new InvalidIdException('Hex value exceeds 64-bit integer range');
+        }
         $result = hexdec($hex);
         if (is_float($result)) {
             throw new InvalidIdException('Hex value exceeds 64-bit integer range');

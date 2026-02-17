@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace HybridId\Tests;
 
+use HybridId\Exception\IdOverflowException;
 use HybridId\HybridIdGenerator;
 use HybridId\Profile;
 use PHPUnit\Framework\TestCase;
@@ -259,5 +260,32 @@ final class BlindModeTest extends TestCase
         $this->assertSame(0, $exitCode);
         $id = $output->getLines()[0];
         $this->assertSame(16, strlen($id));
+    }
+
+    // -------------------------------------------------------------------------
+    // Blind + maxIdLength
+    // -------------------------------------------------------------------------
+
+    public function testBlindWithMaxIdLengthAcceptsExactFit(): void
+    {
+        $gen = new HybridIdGenerator(blind: true, maxIdLength: 20);
+        $id = $gen->generate();
+        $this->assertSame(20, strlen($id));
+    }
+
+    public function testBlindWithPrefixExceedingMaxIdLengthThrows(): void
+    {
+        $gen = new HybridIdGenerator(blind: true, maxIdLength: 25);
+
+        $this->expectException(IdOverflowException::class);
+        $gen->generate('longpfx');
+    }
+
+    public function testBlindCompactWithMaxIdLengthAndPrefixThrows(): void
+    {
+        $gen = new HybridIdGenerator(profile: 'compact', blind: true, maxIdLength: 19);
+
+        $this->expectException(IdOverflowException::class);
+        $gen->generate('test');
     }
 }
