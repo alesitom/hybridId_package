@@ -438,7 +438,9 @@ final class HybridIdGenerator implements IdGenerator
      * Parse a HybridId into all its components in a single pass.
      *
      * Always returns all keys regardless of validity. When 'valid' is false,
-     * component keys (profile, timestamp, datetime, node, random) are null.
+     * component keys (profile, timestamp, datetime, node, random) are null
+     * but prefix and body may still be populated for debugging purposes.
+     * Do not expose parse() results directly via public APIs.
      *
      * @note Uses the global default registry — custom profiles registered via an
      *       injected ProfileRegistry are not visible here.
