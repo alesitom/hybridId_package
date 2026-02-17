@@ -12,9 +12,10 @@ use HybridId\Exception\NodeRequiredException;
 
 final class HybridIdGenerator implements IdGenerator
 {
+    /** Base62 alphabet: digits, uppercase, lowercase (62 characters, URL-safe). */
     private const string BASE62 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
 
-    /** @var array<string, int> Reverse lookup: character => position for O(1) decoding */
+    /** Reverse lookup: character => position for O(1) decoding. */
     private const array BASE62_MAP = [
         '0' => 0,  '1' => 1,  '2' => 2,  '3' => 3,  '4' => 4,  '5' => 5,  '6' => 6,  '7' => 7,
         '8' => 8,  '9' => 9,  'A' => 10, 'B' => 11, 'C' => 12, 'D' => 13, 'E' => 14, 'F' => 15,
@@ -26,9 +27,16 @@ final class HybridIdGenerator implements IdGenerator
         'u' => 56, 'v' => 57, 'w' => 58, 'x' => 59, 'y' => 60, 'z' => 61,
     ];
 
+    /** Separator between prefix and body (Stripe convention). */
     private const string PREFIX_SEPARATOR = '_';
+
+    /** Maximum allowed prefix length (Stripe uses max 8). */
     private const int PREFIX_MAX_LENGTH = 8;
+
+    /** Matches valid ID characters (alphanumeric + underscore). */
     private const string REGEX_ID_CHARS = '/^[a-zA-Z0-9_]+$/';
+
+    /** Matches valid prefix format (lowercase alphanumeric, starts with letter). */
     private const string REGEX_PREFIX = '/^[a-z][a-z0-9]*$/';
 
     /**
@@ -193,7 +201,8 @@ final class HybridIdGenerator implements IdGenerator
      * @note NOT thread-safe. Each thread/coroutine (Swoole, ReactPHP, Laravel Octane)
      *       must use its own HybridIdGenerator instance to avoid timestamp collisions.
      *
-     * @throws IdOverflowException If monotonic drift exceeds MAX_DRIFT_MS (sustained high throughput)
+     * @throws IdOverflowException If monotonic drift exceeds MAX_DRIFT_MS or maxIdLength exceeded
+     * @throws InvalidPrefixException If prefix format is invalid
      */
     public function generate(?string $prefix = null): string
     {
@@ -205,6 +214,9 @@ final class HybridIdGenerator implements IdGenerator
      *
      * @note For multi-node deployments with more than a few hundred IDs/second,
      *       prefer standard() or extended() and set explicit node IDs.
+     *
+     * @throws IdOverflowException If monotonic drift exceeds MAX_DRIFT_MS or maxIdLength exceeded
+     * @throws InvalidPrefixException If prefix format is invalid
      */
     public function compact(?string $prefix = null): string
     {
@@ -213,6 +225,9 @@ final class HybridIdGenerator implements IdGenerator
 
     /**
      * Generate a standard ID (20 chars: 8ts + 2node + 10random, ~59.5 bits entropy).
+     *
+     * @throws IdOverflowException If monotonic drift exceeds MAX_DRIFT_MS or maxIdLength exceeded
+     * @throws InvalidPrefixException If prefix format is invalid
      */
     public function standard(?string $prefix = null): string
     {
@@ -221,6 +236,9 @@ final class HybridIdGenerator implements IdGenerator
 
     /**
      * Generate an extended ID (24 chars: 8ts + 2node + 14random, ~83.4 bits entropy).
+     *
+     * @throws IdOverflowException If monotonic drift exceeds MAX_DRIFT_MS or maxIdLength exceeded
+     * @throws InvalidPrefixException If prefix format is invalid
      */
     public function extended(?string $prefix = null): string
     {
@@ -235,6 +253,10 @@ final class HybridIdGenerator implements IdGenerator
      * @note Large batches advance the monotonic counter, causing timestamp drift
      *       proportional to the batch size (e.g. 5,000 IDs ≈ 5s drift). The drift
      *       cap (MAX_DRIFT_MS) will throw IdOverflowException if exceeded.
+     *
+     * @throws \InvalidArgumentException If count is out of range
+     * @throws IdOverflowException If monotonic drift exceeds MAX_DRIFT_MS
+     * @throws InvalidPrefixException If prefix format is invalid
      *
      * @since 4.0.0
      */
@@ -361,6 +383,9 @@ final class HybridIdGenerator implements IdGenerator
      * @param int $maxPrefixLength Maximum prefix length to accommodate (0 = no prefix)
      * @return int Column size in characters
      *
+     * @throws InvalidPrefixException If maxPrefixLength is out of range
+     * @throws InvalidProfileException If profile is unknown
+     *
      * @since 4.0.0
      */
     public static function recommendedColumnSize(Profile|string $profile, int $maxPrefixLength = 0): int
@@ -437,6 +462,8 @@ final class HybridIdGenerator implements IdGenerator
 
     /**
      * Extract the millisecond timestamp from a HybridId (with or without prefix).
+     *
+     * @throws InvalidIdException If the ID format is invalid
      */
     public static function extractTimestamp(string $id): int
     {
@@ -453,6 +480,8 @@ final class HybridIdGenerator implements IdGenerator
      * @note Under high throughput the monotonic guard increments timestamps
      *       artificially, so the returned time may be slightly ahead of the
      *       actual wall-clock time at which the ID was created.
+     *
+     * @throws InvalidIdException If the ID format is invalid
      */
     public static function extractDateTime(string $id): \DateTimeImmutable
     {
@@ -465,17 +494,22 @@ final class HybridIdGenerator implements IdGenerator
             sprintf('%d %06d', $seconds, $microseconds),
         );
 
+        // @codeCoverageIgnoreStart — unreachable: extractTimestamp() validates the ID
+        // and any valid millisecond timestamp produces a valid DateTime.
         if ($dt === false) {
             throw new \RuntimeException(
                 sprintf('Failed to create DateTime from HybridId (timestamp: %d ms)', $timestampMs),
             );
         }
+        // @codeCoverageIgnoreEnd
 
         return $dt;
     }
 
     /**
      * Extract the node identifier from a HybridId, or null for node-less profiles (compact).
+     *
+     * @throws InvalidIdException If the ID format is invalid
      */
     public static function extractNode(string $id): ?string
     {
@@ -535,6 +569,8 @@ final class HybridIdGenerator implements IdGenerator
 
     /**
      * Get the random entropy bits for a given profile.
+     *
+     * @throws InvalidProfileException If profile is unknown
      */
     public static function entropy(Profile|string $profile): float
     {
@@ -554,6 +590,8 @@ final class HybridIdGenerator implements IdGenerator
      * Get profile configuration details.
      *
      * @return array{length: int, ts: int, node: int, random: int}
+     *
+     * @throws InvalidProfileException If profile is unknown
      *
      * @since 4.0.0
      */
@@ -629,6 +667,8 @@ final class HybridIdGenerator implements IdGenerator
      * Returns -1, 0, or 1 — compatible with usort() and spaceship operator convention.
      * Returns 0 only when both IDs are byte-identical (after prefix stripping).
      * Handles prefixed IDs by stripping prefixes before comparison.
+     *
+     * @throws InvalidIdException If either ID format is invalid
      */
     public static function compare(string $a, string $b): int
     {
@@ -647,6 +687,9 @@ final class HybridIdGenerator implements IdGenerator
      * Useful for constructing inclusive lower bounds in DB range queries:
      *   WHERE id >= minForTimestamp($startMs)
      *
+     * @throws InvalidProfileException If profile is unknown
+     * @throws IdOverflowException If timestamp exceeds encodable range
+     *
      * @since 4.0.0
      */
     public static function minForTimestamp(int $timestampMs, Profile|string $profile = Profile::Standard): string
@@ -663,6 +706,9 @@ final class HybridIdGenerator implements IdGenerator
      *
      * Useful for constructing inclusive upper bounds in DB range queries:
      *   WHERE id <= maxForTimestamp($endMs)
+     *
+     * @throws InvalidProfileException If profile is unknown
+     * @throws IdOverflowException If timestamp exceeds encodable range
      *
      * @since 4.0.0
      */
@@ -757,6 +803,9 @@ final class HybridIdGenerator implements IdGenerator
     /**
      * Encode an integer to base62 string with fixed length.
      *
+     * @throws \InvalidArgumentException If length < 1
+     * @throws IdOverflowException If value is negative or exceeds length capacity
+     *
      * @since 4.0.0
      */
     public static function encodeBase62(int $num, int $length): string
@@ -792,6 +841,9 @@ final class HybridIdGenerator implements IdGenerator
 
     /**
      * Decode a base62 string to integer.
+     *
+     * @throws InvalidIdException If string is empty or contains invalid characters
+     * @throws IdOverflowException If value exceeds 64-bit integer range
      *
      * @since 4.0.0
      */

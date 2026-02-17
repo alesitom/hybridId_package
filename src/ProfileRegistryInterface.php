@@ -21,6 +21,7 @@ interface ProfileRegistryInterface
     /**
      * Register a custom profile.
      * @param int<6, 128> $random Number of random characters
+     * @throws \HybridId\Exception\InvalidProfileException If name/random is invalid or conflicts
      */
     public function register(string $name, int $random): void;
 

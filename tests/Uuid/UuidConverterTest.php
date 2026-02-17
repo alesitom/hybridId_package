@@ -408,16 +408,24 @@ final class UuidConverterTest extends TestCase
         UuidConverter::fromUUIDv8('not-a-valid-uuid');
     }
 
-    public function testRejectsInvalidVariant(): void
+    #[\PHPUnit\Framework\Attributes\DataProvider('invalidVariantProvider')]
+    public function testRejectsInvalidVariantForAllVersions(string $method, string $uuid): void
     {
-        // Build a UUID with wrong variant (not 10xx)
-        // Use a valid-looking hex but with variant nibble = 0x0 (00xx, not 10xx)
-        $uuid = '00000000-0000-8000-0000-000000000000';
-
         $this->expectException(InvalidIdException::class);
         $this->expectExceptionMessage('variant');
 
-        UuidConverter::fromUUIDv8($uuid);
+        UuidConverter::$method($uuid);
+    }
+
+    /** @return array<string, array{string, string}> */
+    public static function invalidVariantProvider(): array
+    {
+        // Variant nibble = 0x0 (00xx instead of 10xx) for each UUID version
+        return [
+            'v8' => ['fromUUIDv8', '00000000-0000-8000-0000-000000000000'],
+            'v7' => ['fromUUIDv7', '00000000-0000-7000-0000-000000000000'],
+            'v4' => ['fromUUIDv4Format', '00000000-0000-4000-0000-000000000000'],
+        ];
     }
 
     public function testToUUIDv8RejectsPrefixedId(): void
