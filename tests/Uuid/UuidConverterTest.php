@@ -344,6 +344,26 @@ final class UuidConverterTest extends TestCase
         UuidConverter::fromUUIDv4($uuid, 'standard', null, 'ABC');
     }
 
+    public function testFromUUIDv4RejectsNegativeTimestamp(): void
+    {
+        $uuid = UuidConverter::toUUIDv4((new HybridIdGenerator(requireExplicitNode: false))->generate());
+
+        $this->expectException(InvalidIdException::class);
+        $this->expectExceptionMessage('non-negative');
+
+        UuidConverter::fromUUIDv4($uuid, 'standard', -1);
+    }
+
+    public function testFromUUIDv4RejectsOverflowTimestamp(): void
+    {
+        $uuid = UuidConverter::toUUIDv4((new HybridIdGenerator(requireExplicitNode: false))->generate());
+
+        $this->expectException(\OverflowException::class);
+        $this->expectExceptionMessage('maximum encodable');
+
+        UuidConverter::fromUUIDv4($uuid, 'standard', 62 ** 8);
+    }
+
     // =========================================================================
     // Cross-version
     // =========================================================================

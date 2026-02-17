@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace HybridId\Uuid;
 
+use HybridId\Exception\IdOverflowException;
 use HybridId\Exception\InvalidIdException;
 use HybridId\Exception\InvalidProfileException;
 use HybridId\HybridIdGenerator;
@@ -200,6 +201,13 @@ final class UuidConverter
         $config = HybridIdGenerator::profileConfig($profileName);
 
         $timestamp = $timestampMs ?? (int) (microtime(true) * 1000);
+
+        if ($timestamp < 0) {
+            throw new InvalidIdException('Timestamp must be non-negative');
+        }
+        if ($timestamp > 62 ** 8 - 1) {
+            throw new IdOverflowException('Timestamp exceeds maximum encodable value (62^8 - 1)');
+        }
 
         if ($node !== null) {
             if (strlen($node) !== 2 || strspn($node, '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz') !== 2) {
