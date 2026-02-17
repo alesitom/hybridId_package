@@ -374,15 +374,21 @@ final class HybridIdGenerator implements IdGenerator
     /**
      * Parse a HybridId into all its components in a single pass.
      *
-     * Returns an array with 'valid' => true and all components for valid IDs,
-     * or 'valid' => false with partial data for invalid IDs.
+     * Always returns all keys regardless of validity. When 'valid' is false,
+     * component keys (profile, timestamp, datetime, node, random) are null.
      *
-     * @return array{valid: bool, prefix: ?string, body: ?string, profile?: string, timestamp?: int, datetime?: ?\DateTimeImmutable, node?: ?string, random?: string}
+     * @return array{valid: bool, prefix: ?string, body: ?string, profile: ?string, timestamp: ?int, datetime: ?\DateTimeImmutable, node: ?string, random: ?string}
      */
     public static function parse(string $id): array
     {
+        $nullResult = [
+            'valid' => false, 'prefix' => null, 'body' => null,
+            'profile' => null, 'timestamp' => null, 'datetime' => null,
+            'node' => null, 'random' => null,
+        ];
+
         if ($id === '' || strlen($id) > self::MAX_ID_LENGTH || !preg_match('/^[a-zA-Z0-9_]+$/', $id)) {
-            return ['valid' => false, 'prefix' => null, 'body' => null];
+            return $nullResult;
         }
 
         $prefix = self::extractPrefix($id);
@@ -390,11 +396,7 @@ final class HybridIdGenerator implements IdGenerator
         $profile = self::detectProfile($id);
 
         if ($profile === null) {
-            return [
-                'valid' => false,
-                'prefix' => $prefix,
-                'body' => $body,
-            ];
+            return [...$nullResult, 'prefix' => $prefix, 'body' => $body];
         }
 
         $config = self::profileConfig($profile);

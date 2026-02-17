@@ -1346,15 +1346,18 @@ final class HybridIdGeneratorTest extends TestCase
         $this->assertSame(14, strlen($extended['random']));
     }
 
-    public function testParseInvalidIdReturnsPartialData(): void
+    public function testParseInvalidIdReturnsAllKeysAsNull(): void
     {
         $result = HybridIdGenerator::parse('usr_invalidbody');
 
         $this->assertFalse($result['valid']);
         $this->assertSame('usr', $result['prefix']);
         $this->assertSame('invalidbody', $result['body']);
-        $this->assertArrayNotHasKey('profile', $result);
-        $this->assertArrayNotHasKey('timestamp', $result);
+        $this->assertNull($result['profile']);
+        $this->assertNull($result['timestamp']);
+        $this->assertNull($result['datetime']);
+        $this->assertNull($result['node']);
+        $this->assertNull($result['random']);
     }
 
     public function testParseEmptyStringReturnsInvalid(): void
