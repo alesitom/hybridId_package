@@ -6,7 +6,7 @@ namespace HybridId\Tests\Testing;
 
 use HybridId\HybridIdGenerator;
 use HybridId\IdGenerator;
-use HybridId\Testing\MockHybridIdGenerator;
+use HybridId\Tests\Testing\MockHybridIdGenerator;
 use PHPUnit\Framework\TestCase;
 
 final class MockHybridIdGeneratorTest extends TestCase

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace HybridId\Testing;
+namespace HybridId\Tests\Testing;
 
 use HybridId\HybridIdGenerator;
 use HybridId\IdGenerator;
