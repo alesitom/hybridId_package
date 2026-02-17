@@ -78,7 +78,7 @@ final class HybridIdGenerator implements IdGenerator
         $this->profile = $profileName;
         $this->profileConfig = $config;
         $this->blind = $blind;
-        $this->blindSecret = $blind ? random_bytes(32) : null;
+        $this->blindSecret = $blind ? self::secureRandomBytes(32) : null;
 
         if ($node !== null) {
             if (strlen($node) !== 2 || !self::isBase62String($node)) {
@@ -730,7 +730,7 @@ final class HybridIdGenerator implements IdGenerator
      */
     private static function autoDetectNode(): string
     {
-        $bytes = random_bytes(2);
+        $bytes = self::secureRandomBytes(2);
         $nodeNum = (ord($bytes[0]) << 8 | ord($bytes[1])) % 3844;
 
         return self::encodeBase62($nodeNum, 2);
@@ -815,13 +815,13 @@ final class HybridIdGenerator implements IdGenerator
     {
         $limit = 248; // largest multiple of 62 ≤ 255 (4 × 62), eliminates modulo bias
         $chars = [];
-        $buffer = random_bytes((int) ceil($length * 1.25));
+        $buffer = self::secureRandomBytes((int) ceil($length * 1.25));
         $pos = 0;
         $bufLen = strlen($buffer);
 
         while (count($chars) < $length) {
             if ($pos >= $bufLen) {
-                $buffer = random_bytes((int) ceil(($length - count($chars)) * 1.25));
+                $buffer = self::secureRandomBytes((int) ceil(($length - count($chars)) * 1.25));
                 $pos = 0;
                 $bufLen = strlen($buffer);
             }
@@ -878,6 +878,23 @@ final class HybridIdGenerator implements IdGenerator
                     'Prefix must be 1-%d lowercase alphanumeric characters, starting with a letter',
                     self::PREFIX_MAX_LENGTH,
                 ),
+            );
+        }
+    }
+
+    /**
+     * Wrapper around random_bytes() that converts CSPRNG failures into
+     * a RuntimeException within the library's exception hierarchy.
+     */
+    private static function secureRandomBytes(int $length): string
+    {
+        try {
+            return random_bytes($length);
+        } catch (\Random\RandomException $e) {
+            throw new \RuntimeException(
+                'Failed to generate cryptographically secure random bytes',
+                0,
+                $e,
             );
         }
     }
