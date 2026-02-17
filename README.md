@@ -1,20 +1,27 @@
 # HybridId
 
-Compact, time-sortable unique ID generator for PHP. A space-efficient alternative to UUID with configurable entropy profiles, Stripe-style prefixes, and an instance-based API.
+**Compact, time-sortable unique identifiers for PHP**
+
+[![Packagist Version](https://img.shields.io/packagist/v/alesitom/hybrid-id.svg?style=flat-square)](https://packagist.org/packages/alesitom/hybrid-id)
+[![PHP Requirement](https://img.shields.io/packagist/php-v/alesitom/hybrid-id.svg?style=flat-square)](https://packagist.org/packages/alesitom/hybrid-id)
+[![License](https://img.shields.io/packagist/l/alesitom/hybrid-id.svg?style=flat-square)](https://github.com/alesitom/hybridId_package/blob/main/LICENSE)
+[![Tests](https://img.shields.io/github/actions/workflow/status/alesitom/hybridId_package/tests.yml?style=flat-square&label=tests)](https://github.com/alesitom/hybridId_package/actions)
+
+A space-efficient alternative to UUID with configurable entropy profiles, Stripe-style prefixes, and an instance-based API. Generate chronologically sortable, URL-safe identifiers 33-56% smaller than canonical UUIDs — with zero dependencies.
 
 ## Why HybridId?
 
-| Feature | UUID v4 | UUID v7 | ULID | Snowflake | HybridId |
-|---|---|---|---|---|---|
-| Length | 36 chars | 36 chars | 26 chars | 18-19 digits | 16-24+ chars |
-| Time-sortable | No | Yes | Yes | Yes | Yes |
-| URL-safe | No (hyphens) | No (hyphens) | Yes | Yes | Yes (base62) |
-| Human-readable | Low | Low | Medium | Low | High |
-| Self-documenting | No | No | No | No | Yes (prefixes) |
-| Multi-node safe | Yes | Yes | No | Yes (node bits) | Yes (node chars) |
-| Configurable size | No | No | No | No | Yes (profiles) |
-| Random entropy | 122 bits | 74 bits | 80 bits | 12 bits | 47.6 - 83.4+ bits |
-| Dependencies | None | None | Library | Library | None |
+| Feature | HybridId | TypeID | KSUID | UUIDv7 | NanoID | CUID2 |
+|---|---|---|---|---|---|---|
+| Length | 16-24 chars | 26 chars | 27 chars | 36 chars | 21 chars | 24 chars |
+| Configurable size | Yes | No | No | No | No | No |
+| Type prefixes | Yes | Yes | No | No | No | No |
+| Time-sortable | Yes | Yes | Yes | Yes | No | No |
+| Metadata extraction | Full | Partial | Partial | Partial | None | None |
+| Zero dependencies | Yes | Varies | Varies | Yes | Varies | Varies |
+| Range queries | Yes | No | No | No | No | No |
+| Multi-node safe | Yes | Yes | No | Yes | N/A | N/A |
+| Random entropy | 47.6 - 83.4+ bits | ~80 bits | 128 bits | 74 bits | ~126 bits | ~120 bits |
 
 ## Installation
 
@@ -258,9 +265,9 @@ $result = HybridIdGenerator::parse('usr_0VB0Td2uA1mcw1hoy5Kg8mR');
 // Compact IDs return null for node:
 // HybridIdGenerator::parse($compactId)['node']  → null
 
-// Invalid IDs return partial data with valid => false
+// Invalid IDs return all keys with null values
 $result = HybridIdGenerator::parse('not_valid');
-// ['valid' => false, 'prefix' => 'not', 'body' => 'valid']
+// ['valid' => false, 'prefix' => null, 'body' => null, 'profile' => null, ...]
 ```
 
 ## Sorting
@@ -458,6 +465,20 @@ HybridIdGenerator::recommendedColumnSize('extended', maxPrefixLength: 7);  // 32
 HybridIdGenerator::recommendedColumnSize('standard');                       // 20 (no prefix)
 ```
 
+### Storage efficiency
+
+| Format | Typical length | VARCHAR size | Savings vs UUID |
+|--------|---------------|-------------|-----------------|
+| UUID (canonical) | 36 | CHAR(36) | — |
+| UUID (binary) | 16 bytes | BINARY(16) | — |
+| ULID | 26 | CHAR(26) | 28% vs UUID text |
+| TypeID | 26+ prefix | VARCHAR(34) | 6% vs UUID text |
+| HybridId compact | 16 | CHAR(16) | 56% vs UUID text |
+| HybridId standard | 20 | CHAR(20) | 44% vs UUID text |
+| HybridId extended | 24 | CHAR(24) | 33% vs UUID text |
+
+Smaller primary keys improve B-tree index density, reduce page splits on sequential inserts, and lower WAL/redo log volume. HybridId's time-sorted layout also eliminates the random-insert penalty that plagues UUID v4.
+
 ### Column guard with maxIdLength
 
 Prevent runtime truncation by setting `maxIdLength` in the constructor:
@@ -548,6 +569,27 @@ These return synthetic boundary IDs (all-zero or all-max node+random) suitable f
 **Timestamp disclosure.** The first 8 characters encode the creation time to the millisecond. Anyone with a HybridId can extract when it was created and which node generated it. This is inherent to the design (same as UUID v7). If creation time must be confidential, use **blind mode** (see below).
 
 **Validation is not constant-time.** `isValid()` returns early on the first invalid character. If you compare HybridIds in security-sensitive contexts (e.g., authorization), use `hash_equals()` instead of `===` to prevent timing side-channels.
+
+## Standards & Security
+
+### Standards alignment
+
+- **RFC 9562**: UUIDv8 compliant via `UuidConverter::toUUIDv8()` — see [RFC 9562](https://www.rfc-editor.org/rfc/rfc9562) for UUID version 8 specification
+- **CSPRNG**: Uses `random_bytes()` backed by OS-level cryptographic random (`getrandom(2)` on Linux, `CryptGenRandom` on Windows)
+- **Rejection sampling**: Eliminates modulo bias in random character generation, aligned with NIST SP 800-90A best practices
+- **RFC 3986**: Output is URL-safe base62, no percent-encoding needed — see [RFC 3986](https://www.rfc-editor.org/rfc/rfc3986) for URI syntax
+- **ASCII/UTF-8**: Output is pure ASCII (subset of UTF-8, RFC 3629 compatible)
+
+### What HybridId is NOT
+
+HybridId is designed for entity identification, not security:
+
+- **NOT suitable for security tokens**: Do not use for session IDs, API keys, password reset tokens, or secrets
+- **NOT OWASP ASVS V2.6 compliant**: Does not meet requirements for unpredictable tokens (timestamp component is predictable)
+- **NOT constant-time in validation**: Uses early return pattern — not suitable for timing-sensitive comparisons
+- **Timestamp is predictable by design**: First 8 characters encode creation time (same limitation as UUIDv7)
+
+For security tokens, use `random_bytes()` with 128+ bits of pure entropy or dedicated libraries like `paragonie/random_compat`.
 
 ## Blind Mode
 
