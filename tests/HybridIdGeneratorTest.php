@@ -1874,4 +1874,87 @@ final class HybridIdGeneratorTest extends TestCase
             putenv('HYBRID_ID_REQUIRE_NODE');
         }
     }
+
+    // -------------------------------------------------------------------------
+    // fromEnv() — $_ENV / $_SERVER fallback (#182)
+    // -------------------------------------------------------------------------
+
+    public function testFromEnvReadsFromEnvSuperglobal(): void
+    {
+        try {
+            putenv('HYBRID_ID_PROFILE');
+            putenv('HYBRID_ID_NODE');
+            putenv('HYBRID_ID_REQUIRE_NODE');
+
+            $_ENV['HYBRID_ID_PROFILE'] = 'extended';
+            $_ENV['HYBRID_ID_NODE'] = 'X5';
+
+            $gen = HybridIdGenerator::fromEnv();
+
+            $this->assertSame('extended', $gen->getProfile());
+            $this->assertSame('X5', $gen->getNode());
+        } finally {
+            unset($_ENV['HYBRID_ID_PROFILE'], $_ENV['HYBRID_ID_NODE']);
+            putenv('HYBRID_ID_PROFILE');
+            putenv('HYBRID_ID_NODE');
+            putenv('HYBRID_ID_REQUIRE_NODE');
+        }
+    }
+
+    public function testFromEnvReadsFromServerSuperglobal(): void
+    {
+        try {
+            putenv('HYBRID_ID_PROFILE');
+            putenv('HYBRID_ID_NODE');
+            putenv('HYBRID_ID_REQUIRE_NODE');
+
+            $_SERVER['HYBRID_ID_PROFILE'] = 'compact';
+            $_SERVER['HYBRID_ID_NODE'] = 'R2';
+
+            $gen = HybridIdGenerator::fromEnv();
+
+            $this->assertSame('compact', $gen->getProfile());
+            $this->assertSame('R2', $gen->getNode());
+        } finally {
+            unset($_SERVER['HYBRID_ID_PROFILE'], $_SERVER['HYBRID_ID_NODE']);
+            putenv('HYBRID_ID_PROFILE');
+            putenv('HYBRID_ID_NODE');
+            putenv('HYBRID_ID_REQUIRE_NODE');
+        }
+    }
+
+    public function testFromEnvGetenvTakesPriorityOverSuperglobals(): void
+    {
+        try {
+            putenv('HYBRID_ID_NODE=A1');
+            $_ENV['HYBRID_ID_NODE'] = 'B2';
+            $_SERVER['HYBRID_ID_NODE'] = 'C3';
+
+            $gen = HybridIdGenerator::fromEnv();
+
+            $this->assertSame('A1', $gen->getNode());
+        } finally {
+            unset($_ENV['HYBRID_ID_NODE'], $_SERVER['HYBRID_ID_NODE']);
+            putenv('HYBRID_ID_NODE');
+        }
+    }
+
+    public function testFromEnvEnvTakesPriorityOverServer(): void
+    {
+        try {
+            putenv('HYBRID_ID_NODE');
+            putenv('HYBRID_ID_REQUIRE_NODE');
+
+            $_ENV['HYBRID_ID_NODE'] = 'E1';
+            $_SERVER['HYBRID_ID_NODE'] = 'S2';
+
+            $gen = HybridIdGenerator::fromEnv();
+
+            $this->assertSame('E1', $gen->getNode());
+        } finally {
+            unset($_ENV['HYBRID_ID_NODE'], $_SERVER['HYBRID_ID_NODE']);
+            putenv('HYBRID_ID_NODE');
+            putenv('HYBRID_ID_REQUIRE_NODE');
+        }
+    }
 }
