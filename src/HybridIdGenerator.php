@@ -785,6 +785,9 @@ final class HybridIdGenerator implements IdGenerator
 
         $random = self::randomBase62($config['random']);
 
+        // Blind mode: HMAC replaces timestamp+node with opaque chars of equal length.
+        // Hides absolute time, but sequential IDs from the same instance still reveal
+        // relative generation order (monotonic input → deterministic HMAC ordering).
         if ($this->blind) {
             $hmacInput = pack('J', $now) . ($config['node'] > 0 ? $this->node : '');
             $hmacBytes = hash_hmac('sha384', $hmacInput, $this->blindSecret, true);

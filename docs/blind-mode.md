@@ -48,7 +48,8 @@ Same length, same alphabet. An observer cannot tell if an ID is blind or not.
 
 ## What Changes
 
-- **No chronological sorting** — HMAC output is pseudo-random
+- **No chronological sorting** — HMAC output is not lexicographically sortable by time
+- **Ordering analysis** — sequential blind IDs from the same instance reveal relative generation order (not absolute time), because the HMAC input is monotonically increasing
 - `extractTimestamp()` returns HMAC-derived value, not real time
 - `minForTimestamp()`/`maxForTimestamp()` won't match blind IDs
 - `extractNode()` returns HMAC-derived characters
