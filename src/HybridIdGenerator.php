@@ -108,40 +108,63 @@ final class HybridIdGenerator implements IdGenerator
     /**
      * Create an instance configured from environment variables.
      *
-     * Reads HYBRID_ID_PROFILE and HYBRID_ID_NODE from the environment.
+     * Reads HYBRID_ID_PROFILE, HYBRID_ID_NODE, HYBRID_ID_REQUIRE_NODE,
+     * and HYBRID_ID_BLIND from the environment.
      * Pairs well with vlucas/phpdotenv for .env file support.
+     *
+     * Security note: treat HYBRID_ID_NODE as sensitive configuration.
+     * In shared hosting or containerized environments, ensure these
+     * variables cannot be overridden by untrusted parties.
      */
     public static function fromEnv(?ProfileRegistryInterface $registry = null): self
     {
-        $profileValue = getenv('HYBRID_ID_PROFILE', true) ?: getenv('HYBRID_ID_PROFILE');
-        $profileValue = ($profileValue !== false && $profileValue !== '') ? $profileValue : 'standard';
-        $profile = Profile::tryFrom($profileValue) ?? $profileValue;
+        $reg = $registry ?? self::defaultRegistry();
 
-        $node = getenv('HYBRID_ID_NODE', true) ?: getenv('HYBRID_ID_NODE');
-        $requireNode = getenv('HYBRID_ID_REQUIRE_NODE', true);
-        if ($requireNode === false) {
-            $requireNode = getenv('HYBRID_ID_REQUIRE_NODE');
+        $profileValue = self::readEnv('HYBRID_ID_PROFILE') ?? 'standard';
+        $profile = Profile::tryFrom($profileValue) ?? $profileValue;
+        if (is_string($profile) && $reg->get($profile) === null) {
+            throw new InvalidProfileException(
+                sprintf('Invalid HYBRID_ID_PROFILE: "%s"', $profileValue),
+            );
+        }
+
+        $node = self::readEnv('HYBRID_ID_NODE');
+        if ($node !== null && (strlen($node) !== 2 || !self::isBase62String($node))) {
+            throw new \InvalidArgumentException(
+                sprintf('Invalid HYBRID_ID_NODE: "%s". Must be exactly 2 base62 characters.', $node),
+            );
         }
 
         // When HYBRID_ID_REQUIRE_NODE is not set, use the constructor default (true).
         // Set HYBRID_ID_REQUIRE_NODE=0 to explicitly disable the guard.
-        $requireExplicit = ($requireNode === false || $requireNode === '')
-            ? true
-            : $requireNode !== '0';
+        $requireNodeEnv = self::readEnv('HYBRID_ID_REQUIRE_NODE');
+        $requireExplicit = ($requireNodeEnv === null) ? true : $requireNodeEnv !== '0';
 
-        $blindEnv = getenv('HYBRID_ID_BLIND', true);
-        if ($blindEnv === false) {
-            $blindEnv = getenv('HYBRID_ID_BLIND');
-        }
-        $blind = ($blindEnv !== false && $blindEnv !== '' && $blindEnv !== '0');
+        $blindEnv = self::readEnv('HYBRID_ID_BLIND');
+        $blind = ($blindEnv !== null && $blindEnv !== '0');
 
         return new self(
             profile: $profile,
-            node: ($node !== false && $node !== '') ? $node : null,
+            node: $node,
             requireExplicitNode: $requireExplicit,
-            registry: $registry,
+            registry: $reg,
             blind: $blind,
         );
+    }
+
+    /**
+     * Read an environment variable consistently, checking local-only first.
+     *
+     * Returns null when the variable is not set or empty.
+     */
+    private static function readEnv(string $name): ?string
+    {
+        $value = getenv($name, true);
+        if ($value === false) {
+            $value = getenv($name);
+        }
+
+        return ($value !== false && $value !== '') ? $value : null;
     }
 
     private static function defaultRegistry(): ProfileRegistry

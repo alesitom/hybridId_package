@@ -515,8 +515,8 @@ final class HybridIdGeneratorTest extends TestCase
             putenv('HYBRID_ID_PROFILE=../../etc/passwd');
             putenv('HYBRID_ID_NODE');
 
-            $this->expectException(\InvalidArgumentException::class);
-            $this->expectExceptionMessage('Invalid profile');
+            $this->expectException(InvalidProfileException::class);
+            $this->expectExceptionMessage('Invalid HYBRID_ID_PROFILE');
 
             HybridIdGenerator::fromEnv();
         } finally {
@@ -532,7 +532,7 @@ final class HybridIdGeneratorTest extends TestCase
             putenv('HYBRID_ID_NODE=<script>');
 
             $this->expectException(\InvalidArgumentException::class);
-            $this->expectExceptionMessage('Node must be exactly 2');
+            $this->expectExceptionMessage('Invalid HYBRID_ID_NODE');
 
             HybridIdGenerator::fromEnv();
         } finally {
@@ -548,7 +548,7 @@ final class HybridIdGeneratorTest extends TestCase
             putenv('HYBRID_ID_NODE=' . str_repeat('A', 100));
 
             $this->expectException(\InvalidArgumentException::class);
-            $this->expectExceptionMessage('Node must be exactly 2');
+            $this->expectExceptionMessage('Invalid HYBRID_ID_NODE');
 
             HybridIdGenerator::fromEnv();
         } finally {
