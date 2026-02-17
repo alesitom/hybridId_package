@@ -331,6 +331,11 @@ final class HybridIdGenerator implements IdGenerator
 
     // -------------------------------------------------------------------------
     // Static utilities (no instance needed)
+    //
+    // NOTE: static methods below use the global default registry, which only
+    // knows about built-in profiles + those registered via the deprecated
+    // registerProfile(). For custom profiles, use instance methods or pass
+    // a ProfileRegistry via constructor injection.
     // -------------------------------------------------------------------------
 
     /**
@@ -566,12 +571,10 @@ final class HybridIdGenerator implements IdGenerator
      * Timestamp (8) and node (2) are fixed — only random is configurable.
      * Total length = 10 + random.
      *
-     * @note Call during application bootstrap only, before creating any
-     *       generator instances. The profile registry is global (static) and
-     *       mutations after generators are constructed will not affect
-     *       existing instances' cached configuration.
-     *
      * @deprecated 4.0.0 Use ProfileRegistry::register() via constructor injection instead.
+     *             This mutates global static state and is UNSAFE in long-lived processes
+     *             (Swoole, RoadRunner, FrankenPHP, Laravel Octane) or multi-tenant environments
+     *             where one tenant's custom profiles would leak to all others.
      */
     public static function registerProfile(string $name, int $random): void
     {
@@ -587,6 +590,7 @@ final class HybridIdGenerator implements IdGenerator
      *
      * @internal Intended for testing only.
      * @deprecated 4.0.0 Use ProfileRegistry::reset() via constructor injection instead.
+     *             This mutates global static state — see registerProfile() for risks.
      */
     public static function resetProfiles(): void
     {
