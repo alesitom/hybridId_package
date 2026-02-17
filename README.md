@@ -1,20 +1,27 @@
 # HybridId
 
-Compact, time-sortable unique ID generator for PHP. A space-efficient alternative to UUID with configurable entropy profiles, Stripe-style prefixes, and an instance-based API.
+**Compact, time-sortable unique identifiers for PHP**
+
+[![Packagist Version](https://img.shields.io/packagist/v/alesitom/hybrid-id.svg?style=flat-square)](https://packagist.org/packages/alesitom/hybrid-id)
+[![PHP Requirement](https://img.shields.io/packagist/php-v/alesitom/hybrid-id.svg?style=flat-square)](https://packagist.org/packages/alesitom/hybrid-id)
+[![License](https://img.shields.io/packagist/l/alesitom/hybrid-id.svg?style=flat-square)](https://github.com/alesitom/hybridId_package/blob/main/LICENSE)
+[![Tests](https://img.shields.io/github/actions/workflow/status/alesitom/hybridId_package/tests.yml?style=flat-square&label=tests)](https://github.com/alesitom/hybridId_package/actions)
+
+A space-efficient alternative to UUID with configurable entropy profiles, Stripe-style prefixes, and an instance-based API. Generate chronologically sortable, URL-safe identifiers 33-56% smaller than canonical UUIDs — with zero dependencies.
 
 ## Why HybridId?
 
-| Feature | UUID v4 | UUID v7 | ULID | Snowflake | HybridId |
-|---|---|---|---|---|---|
-| Length | 36 chars | 36 chars | 26 chars | 18-19 digits | 16-24+ chars |
-| Time-sortable | No | Yes | Yes | Yes | Yes |
-| URL-safe | No (hyphens) | No (hyphens) | Yes | Yes | Yes (base62) |
-| Human-readable | Low | Low | Medium | Low | High |
-| Self-documenting | No | No | No | No | Yes (prefixes) |
-| Multi-node safe | Yes | Yes | No | Yes (node bits) | Yes (node chars) |
-| Configurable size | No | No | No | No | Yes (profiles) |
-| Random entropy | 122 bits | 74 bits | 80 bits | 12 bits | 35.7 - 83.4+ bits |
-| Dependencies | None | None | Library | Library | None |
+| Feature | HybridId | TypeID | KSUID | UUIDv7 | NanoID | CUID2 |
+|---|---|---|---|---|---|---|
+| Length | 16-24 chars | 26 chars | 27 chars | 36 chars | 21 chars | 24 chars |
+| Configurable size | Yes | No | No | No | No | No |
+| Type prefixes | Yes | Yes | No | No | No | No |
+| Time-sortable | Yes | Yes | Yes | Yes | No | No |
+| Metadata extraction | Full | Partial | Partial | Partial | None | None |
+| Zero dependencies | Yes | Varies | Varies | Yes | Varies | Varies |
+| Range queries | Yes | No | No | No | No | No |
+| Multi-node safe | Yes | Yes | No | Yes | N/A | N/A |
+| Random entropy | 47.6 - 83.4+ bits | ~80 bits | 128 bits | 74 bits | ~126 bits | ~120 bits |
 
 ## Installation
 
@@ -29,10 +36,10 @@ Requires PHP 8.3, 8.4, or 8.5 (64-bit). No external dependencies.
 ```php
 use HybridId\HybridIdGenerator;
 
-$gen = new HybridIdGenerator();
+$gen = new HybridIdGenerator(node: 'A1');
 
-$id = $gen->generate();        // 0VBFDQz4CYRtntu09sbf
-$id = $gen->generate('usr');   // usr_0VBFDQz4CYRtntu09sbf
+$id = $gen->generate();        // 0VBFDQz4A1Rtntu09sbf
+$id = $gen->generate('usr');   // usr_0VBFDQz4A1Rtntu09sbf
 ```
 
 ## Profiles
@@ -41,20 +48,28 @@ Three built-in profiles with different size/entropy tradeoffs:
 
 | Profile | Length | Structure | Random entropy | vs UUID v7 (74 bits) |
 |---|---|---|---|---|
-| `compact` | 16 | 8ts + 2node + 6rand | 35.7 bits | Lower |
+| `compact` | 16 | 8ts + 8rand | 47.6 bits | Lower |
 | `standard` | 20 | 8ts + 2node + 10rand | 59.5 bits | Comparable |
 | `extended` | 24 | 8ts + 2node + 14rand | 83.4 bits | Higher |
 
 **Structure breakdown:**
 
 ```
-0VBFDQz4 CY Rtntu09sbf
+Standard / Extended:
+
+0VBFDQz4 A1 Rtntu09sbf
 |______| |_| |_________|
    ts   node   random
+
+Compact (no node):
+
+0VBFDQz4 xK9mLp2w
+|______| |________|
+   ts      random
 ```
 
 - **ts** (8 chars): Millisecond timestamp in base62. Enables chronological sorting. Covers ~6,920 years from epoch.
-- **node** (2 chars): Server/process identifier. Prevents cross-node collisions.
+- **node** (2 chars, standard/extended only): Server/process identifier. Prevents cross-node collisions. Compact omits this to maximize entropy within 16 characters.
 - **rand** (variable): Cryptographically secure random bytes. Prevents same-millisecond collisions.
 
 ## Creating a Generator
@@ -64,26 +79,35 @@ Three built-in profiles with different size/entropy tradeoffs:
 ```php
 use HybridId\HybridIdGenerator;
 
-// Default: standard profile, auto-detected node
-$gen = new HybridIdGenerator();
+// Standard profile with explicit node (recommended for production)
+$gen = new HybridIdGenerator(node: 'A1');
 
 // Explicit profile and node
 $gen = new HybridIdGenerator(profile: 'extended', node: 'A1');
 
+// Compact profile — no node needed (compact has no node component)
+$gen = new HybridIdGenerator(profile: 'compact');
+
 // With column size guard (throws OverflowException if prefix + body exceeds limit)
-$gen = new HybridIdGenerator(profile: 'extended', maxIdLength: 32);
+$gen = new HybridIdGenerator(profile: 'extended', node: 'A1', maxIdLength: 32);
 ```
 
-### Production node guard
+### Node requirement (production safety)
 
-In clustered deployments, auto-detected nodes can collide. Use `requireExplicitNode` to enforce explicit assignment:
+By default, standard and extended profiles **require** an explicit node. This prevents accidental use of auto-detected nodes in production, where collisions are likely in clustered deployments.
 
 ```php
-// Throws if node is not provided — prevents accidental auto-detection in production
-$gen = new HybridIdGenerator(profile: 'standard', requireExplicitNode: true);
+// Throws NodeRequiredException — no node provided for standard profile
+$gen = new HybridIdGenerator();
 
-// OK — explicit node satisfies the guard
-$gen = new HybridIdGenerator(profile: 'standard', node: 'A1', requireExplicitNode: true);
+// OK — explicit node
+$gen = new HybridIdGenerator(node: 'A1');
+
+// OK — compact profile has no node component, so no node is needed
+$gen = new HybridIdGenerator(profile: 'compact');
+
+// Opt out for local development / testing (auto-detects a random node)
+$gen = new HybridIdGenerator(requireExplicitNode: false);
 ```
 
 ### Via environment variables
@@ -97,7 +121,8 @@ Reads from:
 ```env
 HYBRID_ID_PROFILE=standard
 HYBRID_ID_NODE=A1
-HYBRID_ID_REQUIRE_NODE=1
+HYBRID_ID_REQUIRE_NODE=1    # Default is true; set to 0 to disable
+HYBRID_ID_BLIND=1            # Optional: enable blind mode (HMAC-hashed timestamps)
 ```
 
 For `.env` file support, install [vlucas/phpdotenv](https://github.com/vlucas/phpdotenv):
@@ -115,20 +140,22 @@ $gen = HybridIdGenerator::fromEnv();
 
 ### Node auto-detection
 
-When no node is provided, the generator derives a deterministic 2-char identifier from `gethostname()` and `getmypid()`, yielding 3,844 possible values (62²). By the birthday paradox, 50% collision probability is reached at ~74 distinct host:pid pairs. For multi-server deployments or environments with many worker processes, always set an explicit node per instance to guarantee uniqueness.
+When `requireExplicitNode` is disabled and no node is provided, the generator creates a random 2-char node using `random_bytes()`. This yields 3,844 possible values (62²) per instance and is **non-deterministic** — each new instance gets a different random node.
+
+This is intended as a convenience for local development and testing only. For production deployments, always set an explicit node to guarantee uniqueness across instances.
 
 ## Generating IDs
 
 ```php
-$gen = new HybridIdGenerator();
+$gen = new HybridIdGenerator(node: 'A1');
 
 // Using the instance's configured profile (default: standard)
-$id = $gen->generate();       // 0VBFDQz4CYRtntu09sbf
+$id = $gen->generate();       // 0VBFDQz4A1Rtntu09sbf
 
 // Explicit profile methods
-$id = $gen->compact();        // 0VBFDQz4CY8xegI0
-$id = $gen->standard();       // 0VBFDQz5CYS0PQgr0sbf
-$id = $gen->extended();       // 0VBFDQz6CYxiF0G9pBKVwwn2
+$id = $gen->compact();        // 0VBFDQz4xK9mLp2w       (no node in compact)
+$id = $gen->standard();       // 0VBFDQz5A1S0PQgr0sbf
+$id = $gen->extended();       // 0VBFDQz6A1xiF0G9pBKVwwn2
 ```
 
 ## Prefixes
@@ -136,12 +163,12 @@ $id = $gen->extended();       // 0VBFDQz6CYxiF0G9pBKVwwn2
 Stripe-style prefixes make IDs self-documenting. Pass an optional prefix to any generation method:
 
 ```php
-$gen = new HybridIdGenerator();
+$gen = new HybridIdGenerator(node: 'A1');
 
-$id = $gen->generate('usr');   // usr_0VBFDQz4CYRtntu09sbf
-$id = $gen->generate('ord');   // ord_0VBFDQz5CYxiF0G9pBKV
-$id = $gen->compact('log');    // log_0VBFDQz6CY8xegI0
-$id = $gen->extended('txn');   // txn_0VBFDQz7CYpBKVwwn2xiF0
+$id = $gen->generate('usr');   // usr_0VBFDQz4A1Rtntu09sbf
+$id = $gen->generate('ord');   // ord_0VBFDQz5A1xiF0G9pBKV
+$id = $gen->compact('log');    // log_0VBFDQz6xK9mLp2w
+$id = $gen->extended('txn');   // txn_0VBFDQz7A1pBKVwwn2xiF0
 ```
 
 Prefix rules:
@@ -158,10 +185,10 @@ Each instance has its own profile, node, and monotonic counter. Use multiple gen
 
 ```php
 $userIds = new HybridIdGenerator(profile: 'extended', node: 'U1');
-$logIds  = new HybridIdGenerator(profile: 'compact', node: 'L1');
+$logIds  = new HybridIdGenerator(profile: 'compact');  // compact has no node
 
-$userId = $userIds->generate('usr');  // usr_... (24 char ID)
-$logId  = $logIds->generate('log');   // log_... (16 char ID)
+$userId = $userIds->generate('usr');  // usr_... (24 char body)
+$logId  = $logIds->generate('log');   // log_... (16 char body, no node)
 ```
 
 Instance state is fully independent -- different monotonic counters, different nodes, no cross-contamination.
@@ -187,7 +214,7 @@ HybridIdGenerator::detectProfile('bad');                    // null
 `validate()` checks that an ID matches **this instance's profile** and optionally a specific prefix:
 
 ```php
-$gen = new HybridIdGenerator(profile: 'extended');
+$gen = new HybridIdGenerator(profile: 'extended', node: 'A1');
 
 $gen->validate($extendedId);              // true — body length matches extended (24)
 $gen->validate($standardId);              // false — body length is 20, not 24
@@ -212,6 +239,10 @@ HybridIdGenerator::extractDateTime($id);   // DateTimeImmutable (2026-02-14 22:5
 HybridIdGenerator::extractNode($id);       // "A1"
 HybridIdGenerator::extractPrefix($id);     // "usr"
 HybridIdGenerator::extractPrefix($gen->generate());  // null (no prefix)
+
+// Compact IDs have no node
+$compact = $gen->compact();
+HybridIdGenerator::extractNode($compact);  // null
 ```
 
 ## Parsing
@@ -219,21 +250,24 @@ HybridIdGenerator::extractPrefix($gen->generate());  // null (no prefix)
 Extract all components in a single call with `parse()`:
 
 ```php
-$result = HybridIdGenerator::parse('usr_0VB0Td2u01mcw1hoy5Kg8mR');
+$result = HybridIdGenerator::parse('usr_0VB0Td2uA1mcw1hoy5Kg8mR');
 // [
 //     'valid'     => true,
 //     'prefix'    => 'usr',
 //     'profile'   => 'extended',
-//     'body'      => '0VB0Td2u01mcw1hoy5Kg8mR',
+//     'body'      => '0VB0Td2uA1mcw1hoy5Kg8mR',
 //     'timestamp' => 1708012345678,
 //     'datetime'  => DateTimeImmutable,
-//     'node'      => '01',
+//     'node'      => 'A1',
 //     'random'    => 'mcw1hoy5Kg8mR',
 // ]
+//
+// Compact IDs return null for node:
+// HybridIdGenerator::parse($compactId)['node']  → null
 
-// Invalid IDs return partial data with valid => false
+// Invalid IDs return all keys with null values
 $result = HybridIdGenerator::parse('not_valid');
-// ['valid' => false, 'prefix' => 'not', 'body' => 'valid']
+// ['valid' => false, 'prefix' => null, 'body' => null, 'profile' => null, ...]
 ```
 
 ## Sorting
@@ -243,7 +277,7 @@ Compare IDs chronologically with `compare()`, compatible with `usort()`:
 ```php
 use HybridId\HybridIdGenerator;
 
-$gen = new HybridIdGenerator();
+$gen = new HybridIdGenerator(node: 'A1');
 $ids = [];
 
 for ($i = 0; $i < 100; $i++) {
@@ -265,14 +299,14 @@ usort($mixed, HybridIdGenerator::compare(...));
 ```php
 use HybridId\HybridIdGenerator;
 
-HybridIdGenerator::entropy('compact');       // 35.7
+HybridIdGenerator::entropy('compact');       // 47.6
 HybridIdGenerator::entropy('standard');      // 59.5
 HybridIdGenerator::entropy('extended');      // 83.4
 
 HybridIdGenerator::profiles();               // ['compact', 'standard', 'extended']
 
 HybridIdGenerator::profileConfig('compact');
-// ['length' => 16, 'ts' => 8, 'node' => 2, 'random' => 6]
+// ['length' => 16, 'ts' => 8, 'node' => 0, 'random' => 8]
 
 $gen = new HybridIdGenerator(profile: 'extended', node: 'A1');
 $gen->getProfile();      // "extended"
@@ -283,7 +317,7 @@ $gen->getMaxIdLength();  // null (no limit set)
 
 ## Custom Profiles
 
-Register profiles with custom random lengths. Timestamp (8) and node (2) are fixed -- only the random portion is configurable:
+Register profiles with custom random lengths. Custom profiles always include timestamp (8) + node (2) + your random portion:
 
 ```php
 use HybridId\HybridIdGenerator;
@@ -291,7 +325,7 @@ use HybridId\HybridIdGenerator;
 // Register a 32-char profile: 8ts + 2node + 22random
 HybridIdGenerator::registerProfile('ultra', 22);
 
-$gen = new HybridIdGenerator(profile: 'ultra');
+$gen = new HybridIdGenerator(profile: 'ultra', node: 'A1');
 $id = $gen->generate('txn');
 
 strlen($id);                                    // 36 (3 prefix + 1 underscore + 32)
@@ -376,7 +410,7 @@ interface IdGenerator
 ```
 
 ```bash
-# Inspect an existing ID
+# Inspect a standard ID (shows node)
 ./vendor/bin/hybrid-id inspect usr_0VBFDQz4A1Rtntu09sbf
 
 #   ID:         usr_0VBFDQz4A1Rtntu09sbf
@@ -388,6 +422,17 @@ interface IdGenerator
 #   Random:     Rtntu09sbf
 #   Entropy:    59.5 bits
 #   Valid:      yes
+
+# Inspect a compact ID (no node)
+./vendor/bin/hybrid-id inspect 0VBFDQz4xK9mLp2w
+
+#   ID:         0VBFDQz4xK9mLp2w
+#   Profile:    compact (16 chars)
+#   Timestamp:  1771109611324
+#   DateTime:   2026-02-14 22:53:31.324
+#   Random:     xK9mLp2w
+#   Entropy:    47.6 bits
+#   Valid:      yes
 ```
 
 ```bash
@@ -396,7 +441,7 @@ interface IdGenerator
 
 #   Profile     Length   Structure              Random bits   vs UUID v7
 #   -------     ------   ---------              -----------   ----------
-#   compact     16       8ts + 2node + 6rand    35.7 bits     < UUID v7
+#   compact     16       8ts + 8rand            47.6 bits     < UUID v7
 #   standard    20       8ts + 2node + 10rand   59.5 bits     ~ UUID v7
 #   extended    24       8ts + 2node + 14rand   83.4 bits     > UUID v7
 ```
@@ -419,6 +464,20 @@ Use `recommendedColumnSize()` to calculate this programmatically:
 HybridIdGenerator::recommendedColumnSize('extended', maxPrefixLength: 7);  // 32
 HybridIdGenerator::recommendedColumnSize('standard');                       // 20 (no prefix)
 ```
+
+### Storage efficiency
+
+| Format | Typical length | VARCHAR size | Savings vs UUID |
+|--------|---------------|-------------|-----------------|
+| UUID (canonical) | 36 | CHAR(36) | — |
+| UUID (binary) | 16 bytes | BINARY(16) | — |
+| ULID | 26 | CHAR(26) | 28% vs UUID text |
+| TypeID | 26+ prefix | VARCHAR(34) | 6% vs UUID text |
+| HybridId compact | 16 | CHAR(16) | 56% vs UUID text |
+| HybridId standard | 20 | CHAR(20) | 44% vs UUID text |
+| HybridId extended | 24 | CHAR(24) | 33% vs UUID text |
+
+Smaller primary keys improve B-tree index density, reduce page splits on sequential inserts, and lower WAL/redo log volume. HybridId's time-sorted layout also eliminates the random-insert penalty that plagues UUID v4.
 
 ### Column guard with maxIdLength
 
@@ -498,7 +557,7 @@ These return synthetic boundary IDs (all-zero or all-max node+random) suitable f
 
 ## Choosing a Profile
 
-- **`compact` (16 chars)**: Internal PKs, low-scale apps, storage-constrained systems. ~35.7 bits entropy means 50% collision probability at ~236,000 IDs per millisecond per node. Not recommended for high-throughput multi-node systems.
+- **`compact` (16 chars)**: Internal PKs, low-scale apps, storage-constrained systems. No node component — all 8 non-timestamp characters are random (~47.6 bits entropy). 50% collision probability at ~18.9 million IDs per millisecond globally. Not recommended for high-throughput distributed systems where node isolation is critical.
 - **`standard` (20 chars)**: General purpose, recommended default. ~59.5 bits provides comfortable collision resistance for most applications.
 - **`extended` (24 chars)**: High-scale, public-facing IDs, when you need more entropy than UUID v7. ~83.4 bits of random entropy.
 - **Custom profiles**: Use `registerProfile()` when built-in profiles don't match your requirements.
@@ -507,9 +566,195 @@ These return synthetic boundary IDs (all-zero or all-max node+random) suitable f
 
 **Not for secrets.** Do NOT use HybridId for security tokens, password resets, API keys, or session tokens. The timestamp is predictable and reduces effective entropy. Use `random_bytes()` with 128+ bits of pure entropy for those.
 
-**Timestamp disclosure.** The first 8 characters encode the creation time to the millisecond. Anyone with a HybridId can extract when it was created and which node generated it. This is inherent to the design (same as UUID v7). Do not use HybridId where creation time must be confidential.
+**Timestamp disclosure.** The first 8 characters encode the creation time to the millisecond. Anyone with a HybridId can extract when it was created and which node generated it. This is inherent to the design (same as UUID v7). If creation time must be confidential, use **blind mode** (see below).
 
 **Validation is not constant-time.** `isValid()` returns early on the first invalid character. If you compare HybridIds in security-sensitive contexts (e.g., authorization), use `hash_equals()` instead of `===` to prevent timing side-channels.
+
+## Standards & Security
+
+### Standards alignment
+
+- **RFC 9562**: UUIDv8 compliant via `UuidConverter::toUUIDv8()` — see [RFC 9562](https://www.rfc-editor.org/rfc/rfc9562) for UUID version 8 specification
+- **CSPRNG**: Uses `random_bytes()` backed by OS-level cryptographic random (`getrandom(2)` on Linux, `CryptGenRandom` on Windows)
+- **Rejection sampling**: Eliminates modulo bias in random character generation, aligned with NIST SP 800-90A best practices
+- **RFC 3986**: Output is URL-safe base62, no percent-encoding needed — see [RFC 3986](https://www.rfc-editor.org/rfc/rfc3986) for URI syntax
+- **ASCII/UTF-8**: Output is pure ASCII (subset of UTF-8, RFC 3629 compatible)
+
+### What HybridId is NOT
+
+HybridId is designed for entity identification, not security:
+
+- **NOT suitable for security tokens**: Do not use for session IDs, API keys, password reset tokens, or secrets
+- **NOT OWASP ASVS V2.6 compliant**: Does not meet requirements for unpredictable tokens (timestamp component is predictable)
+- **NOT constant-time in validation**: Uses early return pattern — not suitable for timing-sensitive comparisons
+- **Timestamp is predictable by design**: First 8 characters encode creation time (same limitation as UUIDv7)
+
+For security tokens, use `random_bytes()` with 128+ bits of pure entropy or dedicated libraries like `paragonie/random_compat`.
+
+## Blind Mode
+
+Blind mode HMAC-hashes the timestamp and node portions with a per-instance secret, making the creation time and generating node unextractable from the ID. The output has the **same length and format** as regular IDs — an external observer cannot tell if an ID is blind or not.
+
+```php
+// Blind standard — 20 chars, timestamp+node are HMAC'd
+$gen = new HybridIdGenerator(node: 'A1', blind: true);
+$id = $gen->generate('usr');  // usr_<opaque20chars>
+
+// Blind compact — 16 chars, timestamp is HMAC'd
+$gen = new HybridIdGenerator(profile: 'compact', blind: true);
+
+// Blind bypasses requireExplicitNode — the per-instance secret differentiates instances
+$gen = new HybridIdGenerator(blind: true);  // OK, no throw
+
+// Via environment variable
+// HYBRID_ID_BLIND=1
+$gen = HybridIdGenerator::fromEnv();
+```
+
+**What works:**
+- Same length and validation as non-blind IDs
+- `isValid()`, `detectProfile()`, `validate()` — all work normally
+- Prefixes, batch generation, profile methods (`compact()`, `standard()`, `extended()`)
+- Monotonic guard still ensures unique HMAC inputs per instance
+
+**What changes:**
+- `extractTimestamp()` returns an opaque value (valid int, but not the real creation time)
+- `extractNode()` returns opaque characters (not the real node)
+- `compare()` sorts by HMAC output, not chronologically
+- `minForTimestamp()` / `maxForTimestamp()` produce boundaries that don't match blind IDs
+- UUID round-trip (`UuidConverter`) is not meaningful for blind IDs
+
+**When to use:** User-facing IDs where creation time disclosure is a concern (e.g., registration timing, order frequency patterns).
+
+**Still not for secrets.** Blind mode does not increase entropy — it only hides the timestamp. Do not use blind IDs as security tokens, API keys, or session identifiers.
+
+```bash
+# CLI
+./vendor/bin/hybrid-id generate --blind
+./vendor/bin/hybrid-id generate --blind -p compact -n 5
+```
+
+## UUID Interoperability
+
+HybridId can be converted to and from RFC 9562-compliant UUIDs for interoperability with systems that require standard UUID formats. Three conversion modes are available with different tradeoffs.
+
+```php
+use HybridId\Uuid\UuidConverter;
+```
+
+### UUIDv8 (lossless round-trip)
+
+UUIDv8 provides lossless conversion for compact and standard profiles. The profile type is encoded in the UUID, allowing perfect reconstruction of the original HybridId.
+
+```php
+$gen = new HybridIdGenerator(node: 'A1');
+$id = $gen->standard();  // 0VBFDQz4A1Rtntu09sbf
+
+$uuid = UuidConverter::toUUIDv8($id);
+// 017710961-13c4-8004-8f2c-9db3c6f44e44
+
+$restored = UuidConverter::fromUUIDv8($uuid);
+// 0VBFDQz4A1Rtntu09sbf (identical to original)
+```
+
+**When to use:** API responses, database foreign keys, systems that require UUIDs but you need to preserve full HybridId data.
+
+**Limitations:**
+- Only compact and standard profiles supported (extended throws `InvalidProfileException`)
+- Prefixed IDs are rejected — strip prefix before conversion, track separately
+
+### UUIDv7 (timestamp-preserving)
+
+UUIDv7 preserves the millisecond timestamp and node, making it chronologically sortable and RFC 9562 §5.7 compliant. Requires a profile hint when decoding.
+
+```php
+$gen = new HybridIdGenerator(node: 'A1');
+$id = $gen->standard();  // 0VBFDQz4A1Rtntu09sbf
+
+$uuid = UuidConverter::toUUIDv7($id);
+// 017710961-13c4-7004-8f2c-9db3c6f44e44
+
+// Decoding requires profile hint (defaults to 'standard')
+$restored = UuidConverter::fromUUIDv7($uuid, 'standard');
+// 0VBFDQz4A1Rtntu09sbf
+
+// Profile can be enum or string
+use HybridId\Profile;
+$restored = UuidConverter::fromUUIDv7($uuid, Profile::Standard);
+```
+
+**When to use:** Time-series data, audit logs, when sorting by creation time matters and you need UUID compatibility.
+
+**Limitations:**
+- Only compact and standard profiles supported
+- Profile must be known at decode time (no auto-detection)
+- Prefixed IDs are rejected
+
+### UUIDv4-format (lossy, NOT a true UUIDv4)
+
+Encodes HybridId data into a UUID with v4 structure (version=4, variant=10xx). The output is **NOT** a true RFC 9562 UUIDv4 — it does not contain 122 random bits. Conversion is lossy in both directions.
+
+```php
+$gen = new HybridIdGenerator(node: 'A1');
+$id = $gen->standard();  // 0VBFDQz4A1Rtntu09sbf
+
+$uuid = UuidConverter::toUUIDv4Format($id);
+// 017710961-13c4-4004-8f2c-9db3c6f44e44
+
+// Lossy decode: requires timestamp + node externally
+$restored = UuidConverter::fromUUIDv4Format(
+    $uuid,
+    profile: 'standard',
+    timestampMs: 1771109611324,
+    node: 'A1',
+);
+// 0VBFDQz4A1Rtntu09sbf
+
+// Without timestamp+node: uses current time and extracts node from UUID
+$restored = UuidConverter::fromUUIDv4Format($uuid, 'standard');
+// Random timestamp, possibly different node
+```
+
+**Warning:** Do NOT use `toUUIDv4Format()` output where a true UUIDv4 is expected (RFC 9562 §5.4). The output is deterministic, not cryptographically random. For standards-compliant conversions, use `toUUIDv8()` or `toUUIDv7()`.
+
+**When to use:** Legacy systems that only accept v4-format UUIDs and you cannot change the schema.
+
+**Limitations:**
+- Only compact and standard profiles supported
+- Prefixed IDs are rejected
+- Timestamp and node are lost unless stored separately
+- Output is NOT a true UUIDv4 per RFC 9562
+
+### Prefix handling
+
+All conversion methods reject prefixed IDs to prevent silent data loss. Strip the prefix first and track it separately:
+
+```php
+$gen = new HybridIdGenerator(node: 'A1');
+$id = $gen->generate('usr');  // usr_0VBFDQz4A1Rtntu09sbf
+
+// This throws InvalidIdException
+// UuidConverter::toUUIDv8($id);
+
+// Correct: extract prefix first
+$prefix = HybridIdGenerator::extractPrefix($id);  // "usr"
+$body = substr($id, strlen($prefix) + 1);         // 0VBFDQz4A1Rtntu09sbf
+
+$uuid = UuidConverter::toUUIDv8($body);
+// Store $prefix separately in database column or metadata
+```
+
+### Round-trip compatibility matrix
+
+| Method | Compact | Standard | Extended | Lossless | Notes |
+|--------|---------|----------|----------|----------|-------|
+| UUIDv8 | Yes | Yes | No | Yes | Profile auto-detected |
+| UUIDv7 | Yes | Yes | No | No | Needs profile hint |
+| v4-format | Yes | Yes | No | No | Needs timestamp + node |
+
+### Blind mode compatibility
+
+UUID conversion is not meaningful for blind mode IDs. The timestamp and node portions are HMAC-hashed, so the resulting UUID contains opaque values that don't preserve chronological ordering or original metadata. If you need UUID interoperability, do not enable blind mode.
 
 ## Clock Drift Protection
 
@@ -525,9 +770,60 @@ Each generator instance maintains a monotonic guard that ensures timestamps neve
 
 **Async runtimes.** In long-running processes (Swoole, ReactPHP, Amphp), a shared instance maintains monotonic ordering within the process. The guard works correctly under cooperative scheduling (PHP Fibers), but has no atomicity guarantees under preemptive coroutines.
 
-**Node auto-detection.** The auto-detected node is derived from `gethostname()` and `getmypid()` via `crc32()`, reduced to 3,844 possible values (62²). By the birthday paradox, 50% collision probability is reached at ~74 distinct host:pid pairs. In clustered deployments, always set the node explicitly to guarantee uniqueness.
+**Node auto-detection.** When `requireExplicitNode` is disabled, the auto-detected node is a random 2-char identifier from `random_bytes()`, yielding 3,844 possible values (62²). Each new instance gets a different random node. In clustered deployments, always set the node explicitly to guarantee uniqueness — the default `requireExplicitNode: true` enforces this for standard and extended profiles.
 
 ## Upgrading
+
+### From v3.x to v4.0.0
+
+v4.0.0 contains breaking changes to improve entropy and production safety.
+
+**1. Compact profile no longer includes a node component.**
+
+The compact profile structure changed from `8ts + 2node + 6rand` (35.7 bits entropy) to `8ts + 8rand` (47.6 bits entropy). The total length remains 16 characters.
+
+```php
+// v3: compact IDs had a node
+HybridIdGenerator::extractNode($compactId); // "A1"
+
+// v4: compact IDs have no node
+HybridIdGenerator::extractNode($compactId); // null
+HybridIdGenerator::parse($compactId)['node']; // null
+```
+
+If you have existing compact IDs in your database, they remain valid — `isValid()` and `detectProfile()` still work based on body length. However, `extractNode()` now returns `null` for all compact IDs (including legacy ones that did contain a node).
+
+**2. `requireExplicitNode` now defaults to `true`.**
+
+Standard and extended profiles throw `NodeRequiredException` if no node is provided. This prevents accidental auto-detection in production.
+
+```php
+// v3: worked fine, auto-detected node
+$gen = new HybridIdGenerator();
+
+// v4: throws NodeRequiredException
+$gen = new HybridIdGenerator();
+
+// v4: provide an explicit node
+$gen = new HybridIdGenerator(node: 'A1');
+
+// v4: or opt out for local dev/testing
+$gen = new HybridIdGenerator(requireExplicitNode: false);
+```
+
+The `HYBRID_ID_REQUIRE_NODE` env var now defaults to `true` when not set. Set it to `0` to disable.
+
+**3. `autoDetectNode()` now uses `random_bytes()` instead of `crc32(hostname:pid)`.**
+
+The auto-detected node is no longer deterministic. Each instance gets a different random node. This eliminates the collision weakness of the old `crc32` approach but means the same process may generate different nodes across restarts. This reinforces that auto-detection is for development only.
+
+**4. `decodeBase62()` overflow detection fixed.**
+
+The internal `decodeBase62()` method now uses arithmetic bounds checking instead of the unreliable `is_float()` check. This prevents silent overflow on values exceeding `PHP_INT_MAX`.
+
+**5. New: Blind mode.**
+
+`blind: true` constructor flag HMAC-hashes the timestamp+node portion, making creation time unextractable. See the "Blind Mode" section for details.
 
 ### From v2.x to v3.0.0
 
@@ -590,7 +886,9 @@ HybridIdGenerator::recommendedColumnSize('standard', 3);
 
 ### ID format compatibility
 
-The generated ID format is identical across all versions. IDs generated by v1.x are fully valid and readable by v3.0.0 utilities.
+Standard and extended ID formats are identical across all versions. IDs generated by v1.x/v2.x/v3.x are fully valid and readable by v4.0.0 utilities.
+
+**Note:** Compact IDs generated by v4.0.0 have a different internal structure (no node) compared to v3.x compact IDs, but both are 16 characters and pass validation. The only observable difference is that `extractNode()` returns `null` for all compact IDs in v4.0.0.
 
 ## Migrating from UUID
 

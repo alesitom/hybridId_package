@@ -4,8 +4,14 @@ declare(strict_types=1);
 
 namespace HybridId\Tests;
 
+use HybridId\Exception\IdOverflowException;
+use HybridId\Exception\InvalidIdException;
+use HybridId\Exception\InvalidPrefixException;
+use HybridId\Exception\InvalidProfileException;
+use HybridId\Exception\NodeRequiredException;
 use HybridId\HybridIdGenerator;
 use HybridId\IdGenerator;
+use HybridId\Profile;
 use PHPUnit\Framework\TestCase;
 
 final class HybridIdGeneratorTest extends TestCase
@@ -16,7 +22,7 @@ final class HybridIdGeneratorTest extends TestCase
 
     public function testImplementsIdGenerator(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
 
         $this->assertInstanceOf(IdGenerator::class, $gen);
     }
@@ -27,28 +33,28 @@ final class HybridIdGeneratorTest extends TestCase
 
     public function testGenerateReturnsDefaultProfileLength(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
 
         $this->assertSame(20, strlen($gen->generate()));
     }
 
     public function testCompactReturns16Chars(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
 
         $this->assertSame(16, strlen($gen->compact()));
     }
 
     public function testStandardReturns20Chars(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
 
         $this->assertSame(20, strlen($gen->standard()));
     }
 
     public function testExtendedReturns24Chars(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
 
         $this->assertSame(24, strlen($gen->extended()));
     }
@@ -62,7 +68,7 @@ final class HybridIdGeneratorTest extends TestCase
 
     public function testGenerateContainsOnlyBase62Characters(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
 
         $this->assertMatchesRegularExpression('/^[0-9A-Za-z]{20}$/', $gen->generate());
         $this->assertMatchesRegularExpression('/^[0-9A-Za-z]{16}$/', $gen->compact());
@@ -71,7 +77,7 @@ final class HybridIdGeneratorTest extends TestCase
 
     public function testGenerateProducesUniqueIds(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
         $ids = [];
 
         for ($i = 0; $i < 1000; $i++) {
@@ -83,7 +89,7 @@ final class HybridIdGeneratorTest extends TestCase
 
     public function testCompactProducesUniqueIds(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
         $ids = [];
 
         for ($i = 0; $i < 1000; $i++) {
@@ -100,8 +106,8 @@ final class HybridIdGeneratorTest extends TestCase
     public function testConstructorAcceptsAllProfiles(): void
     {
         $compact = new HybridIdGenerator(profile: 'compact');
-        $standard = new HybridIdGenerator(profile: 'standard');
-        $extended = new HybridIdGenerator(profile: 'extended');
+        $standard = new HybridIdGenerator(profile: 'standard', node: 'T1');
+        $extended = new HybridIdGenerator(profile: 'extended', node: 'T1');
 
         $this->assertSame('compact', $compact->getProfile());
         $this->assertSame('standard', $standard->getProfile());
@@ -111,9 +117,9 @@ final class HybridIdGeneratorTest extends TestCase
     public function testConstructorRejectsInvalidProfile(): void
     {
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('Invalid profile');
+        $this->expectExceptionMessage('Unknown profile');
 
-        new HybridIdGenerator(profile: 'ultra');
+        new HybridIdGenerator(profile: 'ultra', node: 'T1');
     }
 
     public function testConstructorSetsNode(): void
@@ -157,7 +163,7 @@ final class HybridIdGeneratorTest extends TestCase
 
     public function testConstructorAutoDetectsNode(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
 
         $this->assertSame(2, strlen($gen->getNode()));
         $this->assertMatchesRegularExpression('/^[0-9A-Za-z]{2}$/', $gen->getNode());
@@ -177,14 +183,14 @@ final class HybridIdGeneratorTest extends TestCase
 
         $this->assertSame(16, strlen($id1));
         $this->assertSame(24, strlen($id2));
-        $this->assertSame('A1', HybridIdGenerator::extractNode($id1));
+        $this->assertNull(HybridIdGenerator::extractNode($id1)); // compact has no node
         $this->assertSame('B2', HybridIdGenerator::extractNode($id2));
     }
 
     public function testIndependentMonotonicGuards(): void
     {
-        $gen1 = new HybridIdGenerator();
-        $gen2 = new HybridIdGenerator();
+        $gen1 = new HybridIdGenerator(requireExplicitNode: false);
+        $gen2 = new HybridIdGenerator(requireExplicitNode: false);
 
         // Generate many IDs on gen1 to advance its monotonic counter
         for ($i = 0; $i < 50; $i++) {
@@ -199,13 +205,66 @@ final class HybridIdGeneratorTest extends TestCase
         $this->assertGreaterThan($ts2, $ts1);
     }
 
+    public function testMonotonicDriftThrowsWhenExceeded(): void
+    {
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
+
+        // Generate enough IDs to push drift beyond 5000ms.
+        // Each call within the same ms increments by 1, so we need >5000 rapid calls.
+        $this->expectException(IdOverflowException::class);
+        $this->expectExceptionMessage('Monotonic timestamp drift exceeds');
+
+        for ($i = 0; $i < 10_000; $i++) {
+            $gen->generate();
+        }
+    }
+
+    public function testMonotonicDriftAllowsModerateRate(): void
+    {
+        // A few hundred rapid calls should stay well within the 5000ms drift limit
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
+
+        for ($i = 0; $i < 200; $i++) {
+            $id = $gen->generate();
+        }
+
+        $this->assertTrue(HybridIdGenerator::isValid($id));
+    }
+
+    // -------------------------------------------------------------------------
+    // High-frequency uniqueness (#152)
+    // -------------------------------------------------------------------------
+
+    public function testHighFrequencyGenerationMaintainsUniqueness(): void
+    {
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
+        $count = 1000;
+        $ids = [];
+
+        for ($i = 0; $i < $count; $i++) {
+            $ids[] = $gen->generate();
+        }
+
+        // All IDs must be unique
+        $this->assertCount($count, array_unique($ids));
+
+        // All IDs must be strictly monotonically ordered
+        for ($i = 1; $i < $count; $i++) {
+            $this->assertSame(
+                -1,
+                HybridIdGenerator::compare($ids[$i - 1], $ids[$i]),
+                "ID at position {$i} must be greater than previous",
+            );
+        }
+    }
+
     // -------------------------------------------------------------------------
     // Validation (static)
     // -------------------------------------------------------------------------
 
     public function testIsValidAcceptsAllProfiles(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
 
         $this->assertTrue(HybridIdGenerator::isValid($gen->compact()));
         $this->assertTrue(HybridIdGenerator::isValid($gen->standard()));
@@ -235,7 +294,7 @@ final class HybridIdGeneratorTest extends TestCase
     public function testExtractTimestampReturnsReasonableValue(): void
     {
         $before = (int) (microtime(true) * 1000);
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
         $id = $gen->generate();
         $after = (int) (microtime(true) * 1000);
 
@@ -248,7 +307,7 @@ final class HybridIdGeneratorTest extends TestCase
     public function testExtractTimestampWorksForAllProfiles(): void
     {
         $before = (int) (microtime(true) * 1000);
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
 
         $tsCompact = HybridIdGenerator::extractTimestamp($gen->compact());
         $tsStandard = HybridIdGenerator::extractTimestamp($gen->standard());
@@ -269,7 +328,7 @@ final class HybridIdGeneratorTest extends TestCase
 
     public function testExtractDateTimeReturnsCurrentTime(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
         $id = $gen->generate();
         $dt = HybridIdGenerator::extractDateTime($id);
         $now = new \DateTimeImmutable();
@@ -283,14 +342,14 @@ final class HybridIdGeneratorTest extends TestCase
     {
         $gen = new HybridIdGenerator(node: 'N1');
 
-        $this->assertSame('N1', HybridIdGenerator::extractNode($gen->compact()));
+        $this->assertNull(HybridIdGenerator::extractNode($gen->compact())); // compact has no node
         $this->assertSame('N1', HybridIdGenerator::extractNode($gen->standard()));
         $this->assertSame('N1', HybridIdGenerator::extractNode($gen->extended()));
     }
 
     public function testExtractNodeAutoDetectsConsistently(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
         $id1 = $gen->generate();
         $id2 = $gen->generate();
 
@@ -306,7 +365,7 @@ final class HybridIdGeneratorTest extends TestCase
 
     public function testDetectProfileIdentifiesCorrectly(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
 
         $this->assertSame('compact', HybridIdGenerator::detectProfile($gen->compact()));
         $this->assertSame('standard', HybridIdGenerator::detectProfile($gen->standard()));
@@ -325,7 +384,7 @@ final class HybridIdGeneratorTest extends TestCase
 
     public function testEntropyReturnsCorrectBits(): void
     {
-        $this->assertSame(35.7, HybridIdGenerator::entropy('compact'));
+        $this->assertSame(47.6, HybridIdGenerator::entropy('compact'));
         $this->assertSame(59.5, HybridIdGenerator::entropy('standard'));
         $this->assertSame(83.4, HybridIdGenerator::entropy('extended'));
     }
@@ -343,7 +402,7 @@ final class HybridIdGeneratorTest extends TestCase
 
     public function testIdsAreChronologicallyOrdered(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
         $id1 = $gen->generate();
         usleep(2000); // 2ms
         $id2 = $gen->generate();
@@ -360,7 +419,7 @@ final class HybridIdGeneratorTest extends TestCase
 
     public function testTimestampNeverDecreases(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
         $timestamps = [];
 
         for ($i = 0; $i < 100; $i++) {
@@ -374,7 +433,7 @@ final class HybridIdGeneratorTest extends TestCase
 
     public function testTimestampStrictlyIncrementsWithinSameMillisecond(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
         $timestamps = [];
 
         for ($i = 0; $i < 50; $i++) {
@@ -405,8 +464,8 @@ final class HybridIdGeneratorTest extends TestCase
 
         $this->assertSame(16, $config['length']);
         $this->assertSame(8, $config['ts']);
-        $this->assertSame(2, $config['node']);
-        $this->assertSame(6, $config['random']);
+        $this->assertSame(0, $config['node']);
+        $this->assertSame(8, $config['random']);
     }
 
     public function testProfileConfigThrowsOnInvalid(): void
@@ -471,15 +530,35 @@ final class HybridIdGeneratorTest extends TestCase
     {
         try {
             putenv('HYBRID_ID_PROFILE');
-            putenv('HYBRID_ID_NODE');
+            putenv('HYBRID_ID_NODE=T1');
+            putenv('HYBRID_ID_REQUIRE_NODE');
 
             $gen = HybridIdGenerator::fromEnv();
 
             $this->assertSame('standard', $gen->getProfile());
+            $this->assertSame('T1', $gen->getNode());
             $this->assertSame(20, strlen($gen->generate()));
         } finally {
             putenv('HYBRID_ID_PROFILE');
             putenv('HYBRID_ID_NODE');
+            putenv('HYBRID_ID_REQUIRE_NODE');
+        }
+    }
+
+    public function testFromEnvThrowsWithoutNodeByDefault(): void
+    {
+        try {
+            putenv('HYBRID_ID_PROFILE');
+            putenv('HYBRID_ID_NODE');
+            putenv('HYBRID_ID_REQUIRE_NODE');
+
+            $this->expectException(NodeRequiredException::class);
+
+            HybridIdGenerator::fromEnv();
+        } finally {
+            putenv('HYBRID_ID_PROFILE');
+            putenv('HYBRID_ID_NODE');
+            putenv('HYBRID_ID_REQUIRE_NODE');
         }
     }
 
@@ -489,8 +568,8 @@ final class HybridIdGeneratorTest extends TestCase
             putenv('HYBRID_ID_PROFILE=../../etc/passwd');
             putenv('HYBRID_ID_NODE');
 
-            $this->expectException(\InvalidArgumentException::class);
-            $this->expectExceptionMessage('Invalid profile');
+            $this->expectException(InvalidProfileException::class);
+            $this->expectExceptionMessage('Invalid HYBRID_ID_PROFILE');
 
             HybridIdGenerator::fromEnv();
         } finally {
@@ -506,7 +585,7 @@ final class HybridIdGeneratorTest extends TestCase
             putenv('HYBRID_ID_NODE=<script>');
 
             $this->expectException(\InvalidArgumentException::class);
-            $this->expectExceptionMessage('Node must be exactly 2');
+            $this->expectExceptionMessage('Invalid HYBRID_ID_NODE');
 
             HybridIdGenerator::fromEnv();
         } finally {
@@ -522,7 +601,7 @@ final class HybridIdGeneratorTest extends TestCase
             putenv('HYBRID_ID_NODE=' . str_repeat('A', 100));
 
             $this->expectException(\InvalidArgumentException::class);
-            $this->expectExceptionMessage('Node must be exactly 2');
+            $this->expectExceptionMessage('Invalid HYBRID_ID_NODE');
 
             HybridIdGenerator::fromEnv();
         } finally {
@@ -537,7 +616,7 @@ final class HybridIdGeneratorTest extends TestCase
 
     public function testGenerateWithPrefixFormatsCorrectly(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
         $id = $gen->generate('usr');
 
         $this->assertStringStartsWith('usr_', $id);
@@ -546,7 +625,7 @@ final class HybridIdGeneratorTest extends TestCase
 
     public function testAllProfilesWithPrefix(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
 
         $compact = $gen->compact('log');
         $standard = $gen->standard('usr');
@@ -564,7 +643,7 @@ final class HybridIdGeneratorTest extends TestCase
 
     public function testGenerateWithoutPrefixIsUnchanged(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
         $id = $gen->generate();
 
         $this->assertSame(20, strlen($id));
@@ -573,7 +652,7 @@ final class HybridIdGeneratorTest extends TestCase
 
     public function testGenerateWithNullPrefixIsUnchanged(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
         $id = $gen->generate(null);
 
         $this->assertSame(20, strlen($id));
@@ -582,7 +661,7 @@ final class HybridIdGeneratorTest extends TestCase
 
     public function testPrefixedIdIsValid(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
 
         $this->assertTrue(HybridIdGenerator::isValid($gen->generate('usr')));
         $this->assertTrue(HybridIdGenerator::isValid($gen->compact('log')));
@@ -591,7 +670,7 @@ final class HybridIdGeneratorTest extends TestCase
 
     public function testDetectProfileWithPrefix(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
 
         $this->assertSame('standard', HybridIdGenerator::detectProfile($gen->generate('usr')));
         $this->assertSame('compact', HybridIdGenerator::detectProfile($gen->compact('log')));
@@ -601,7 +680,7 @@ final class HybridIdGeneratorTest extends TestCase
     public function testExtractTimestampWithPrefix(): void
     {
         $before = (int) (microtime(true) * 1000);
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
         $id = $gen->generate('usr');
         $after = (int) (microtime(true) * 1000);
 
@@ -621,7 +700,7 @@ final class HybridIdGeneratorTest extends TestCase
 
     public function testExtractDateTimeWithPrefix(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
         $id = $gen->generate('usr');
         $dt = HybridIdGenerator::extractDateTime($id);
         $now = new \DateTimeImmutable();
@@ -633,7 +712,7 @@ final class HybridIdGeneratorTest extends TestCase
 
     public function testExtractPrefix(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
 
         $this->assertSame('usr', HybridIdGenerator::extractPrefix($gen->generate('usr')));
         $this->assertSame('log', HybridIdGenerator::extractPrefix($gen->compact('log')));
@@ -647,7 +726,7 @@ final class HybridIdGeneratorTest extends TestCase
 
     public function testPrefixValidationRejectsEmpty(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
 
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('Prefix must be');
@@ -657,7 +736,7 @@ final class HybridIdGeneratorTest extends TestCase
 
     public function testPrefixValidationRejectsUppercase(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
 
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('Prefix must be');
@@ -667,7 +746,7 @@ final class HybridIdGeneratorTest extends TestCase
 
     public function testPrefixValidationRejectsSpecialChars(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
 
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('Prefix must be');
@@ -677,7 +756,7 @@ final class HybridIdGeneratorTest extends TestCase
 
     public function testPrefixValidationRejectsTooLong(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
 
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('Prefix must be');
@@ -687,7 +766,7 @@ final class HybridIdGeneratorTest extends TestCase
 
     public function testPrefixValidationRejectsStartingWithDigit(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
 
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('Prefix must be');
@@ -697,7 +776,7 @@ final class HybridIdGeneratorTest extends TestCase
 
     public function testPrefixMaxLengthIsAccepted(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
         $id = $gen->generate('abcdefgh'); // exactly 8 chars
 
         $this->assertStringStartsWith('abcdefgh_', $id);
@@ -706,7 +785,7 @@ final class HybridIdGeneratorTest extends TestCase
 
     public function testPrefixWithDigitsAfterFirstChar(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
         $id = $gen->generate('usr2');
 
         $this->assertStringStartsWith('usr2_', $id);
@@ -725,7 +804,7 @@ final class HybridIdGeneratorTest extends TestCase
 
     public function testPrefixedIdsAreUnique(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
         $ids = [];
 
         for ($i = 0; $i < 100; $i++) {
@@ -741,7 +820,7 @@ final class HybridIdGeneratorTest extends TestCase
 
     public function testCompareReturnsCorrectOrder(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
         $id1 = $gen->generate();
         usleep(2000);
         $id2 = $gen->generate();
@@ -752,7 +831,7 @@ final class HybridIdGeneratorTest extends TestCase
 
     public function testCompareWorksWithUsort(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
         $ids = [];
 
         for ($i = 0; $i < 20; $i++) {
@@ -769,7 +848,7 @@ final class HybridIdGeneratorTest extends TestCase
 
     public function testCompareHandlesPrefixedIds(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
         $id1 = $gen->generate('usr');
         usleep(2000);
         $id2 = $gen->generate('ord');
@@ -780,7 +859,7 @@ final class HybridIdGeneratorTest extends TestCase
     public function testCompareAcrossProfiles(): void
     {
         $genCompact = new HybridIdGenerator(profile: 'compact');
-        $genExtended = new HybridIdGenerator(profile: 'extended');
+        $genExtended = new HybridIdGenerator(profile: 'extended', node: 'T1');
 
         $earlier = $genCompact->generate();
         usleep(2000);
@@ -793,7 +872,7 @@ final class HybridIdGeneratorTest extends TestCase
     public function testCompareAcrossProfilesWithPrefixes(): void
     {
         $genCompact = new HybridIdGenerator(profile: 'compact');
-        $genExtended = new HybridIdGenerator(profile: 'extended');
+        $genExtended = new HybridIdGenerator(profile: 'extended', node: 'T1');
 
         $earlier = $genCompact->generate('log');
         usleep(2000);
@@ -804,7 +883,7 @@ final class HybridIdGeneratorTest extends TestCase
 
     public function testCompareIdenticalIdReturnsZero(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
         $id = $gen->generate();
 
         $this->assertSame(0, HybridIdGenerator::compare($id, $id));
@@ -814,7 +893,7 @@ final class HybridIdGeneratorTest extends TestCase
     {
         // Generate many IDs rapidly — monotonic guard increments timestamps,
         // but different random portions ensure distinct IDs
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
         $ids = [];
         for ($i = 0; $i < 10; $i++) {
             $ids[] = $gen->generate();
@@ -836,7 +915,7 @@ final class HybridIdGeneratorTest extends TestCase
         try {
             HybridIdGenerator::registerProfile('ultra', 22);
 
-            $gen = new HybridIdGenerator(profile: 'ultra');
+            $gen = new HybridIdGenerator(profile: 'ultra', node: 'T1');
             $id = $gen->generate();
 
             $this->assertSame(32, strlen($id)); // 8ts + 2node + 22random
@@ -895,7 +974,7 @@ final class HybridIdGeneratorTest extends TestCase
         try {
             HybridIdGenerator::registerProfile('ultra', 22);
 
-            $gen = new HybridIdGenerator(profile: 'ultra');
+            $gen = new HybridIdGenerator(profile: 'ultra', node: 'T1');
             $id = $gen->generate('usr');
 
             $this->assertStringStartsWith('usr_', $id);
@@ -992,8 +1071,8 @@ final class HybridIdGeneratorTest extends TestCase
     public function testBodyLengthReturnsCorrectValues(): void
     {
         $this->assertSame(16, (new HybridIdGenerator(profile: 'compact'))->bodyLength());
-        $this->assertSame(20, (new HybridIdGenerator(profile: 'standard'))->bodyLength());
-        $this->assertSame(24, (new HybridIdGenerator(profile: 'extended'))->bodyLength());
+        $this->assertSame(20, (new HybridIdGenerator(profile: 'standard', node: 'T1'))->bodyLength());
+        $this->assertSame(24, (new HybridIdGenerator(profile: 'extended', node: 'T1'))->bodyLength());
     }
 
     public function testBodyLengthWithCustomProfile(): void
@@ -1001,7 +1080,7 @@ final class HybridIdGeneratorTest extends TestCase
         try {
             HybridIdGenerator::registerProfile('ultra', 22);
 
-            $this->assertSame(32, (new HybridIdGenerator(profile: 'ultra'))->bodyLength());
+            $this->assertSame(32, (new HybridIdGenerator(profile: 'ultra', node: 'T1'))->bodyLength());
         } finally {
             HybridIdGenerator::resetProfiles();
         }
@@ -1047,7 +1126,7 @@ final class HybridIdGeneratorTest extends TestCase
     public function testRecommendedColumnSizeRejectsInvalidProfile(): void
     {
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('Invalid profile');
+        $this->expectExceptionMessage('Unknown profile');
 
         HybridIdGenerator::recommendedColumnSize('nonexistent');
     }
@@ -1058,14 +1137,14 @@ final class HybridIdGeneratorTest extends TestCase
 
     public function testMaxIdLengthDefaultIsNull(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
 
         $this->assertNull($gen->getMaxIdLength());
     }
 
     public function testMaxIdLengthAcceptsValidValue(): void
     {
-        $gen = new HybridIdGenerator(profile: 'extended', maxIdLength: 32);
+        $gen = new HybridIdGenerator(profile: 'extended', node: 'T1', maxIdLength: 32);
 
         $this->assertSame(32, $gen->getMaxIdLength());
     }
@@ -1081,7 +1160,7 @@ final class HybridIdGeneratorTest extends TestCase
 
     public function testMaxIdLengthRejectsBelowBodyLength(): void
     {
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(IdOverflowException::class);
         $this->expectExceptionMessage('maxIdLength (15) must be >= body length (16)');
 
         new HybridIdGenerator(profile: 'compact', maxIdLength: 15);
@@ -1089,7 +1168,7 @@ final class HybridIdGeneratorTest extends TestCase
 
     public function testMaxIdLengthAllowsWithinLimit(): void
     {
-        $gen = new HybridIdGenerator(profile: 'extended', maxIdLength: 32);
+        $gen = new HybridIdGenerator(profile: 'extended', node: 'T1', maxIdLength: 32);
 
         // 7 prefix + 1 underscore + 24 body = 32 — exactly at limit
         $id = $gen->generate('billing');
@@ -1098,7 +1177,7 @@ final class HybridIdGeneratorTest extends TestCase
 
     public function testMaxIdLengthThrowsWhenExceeded(): void
     {
-        $gen = new HybridIdGenerator(profile: 'extended', maxIdLength: 32);
+        $gen = new HybridIdGenerator(profile: 'extended', node: 'T1', maxIdLength: 32);
 
         $this->expectException(\OverflowException::class);
         $this->expectExceptionMessage('exceeds maxIdLength 32');
@@ -1109,7 +1188,7 @@ final class HybridIdGeneratorTest extends TestCase
 
     public function testMaxIdLengthNullAllowsAnyLength(): void
     {
-        $gen = new HybridIdGenerator(profile: 'extended');
+        $gen = new HybridIdGenerator(profile: 'extended', node: 'T1');
 
         // Max prefix (8) + underscore + 24 body = 33 — no limit set, should work
         $id = $gen->generate('abcdefgh');
@@ -1118,7 +1197,7 @@ final class HybridIdGeneratorTest extends TestCase
 
     public function testMaxIdLengthUnprefixedAlwaysFits(): void
     {
-        $gen = new HybridIdGenerator(profile: 'standard', maxIdLength: 20);
+        $gen = new HybridIdGenerator(profile: 'standard', maxIdLength: 20, node: 'T1');
 
         // No prefix, body = 20, exactly at limit
         $id = $gen->generate();
@@ -1131,7 +1210,7 @@ final class HybridIdGeneratorTest extends TestCase
 
     public function testValidateAcceptsCorrectProfile(): void
     {
-        $gen = new HybridIdGenerator(profile: 'extended');
+        $gen = new HybridIdGenerator(profile: 'extended', node: 'T1');
         $id = $gen->generate();
 
         $this->assertTrue($gen->validate($id));
@@ -1139,8 +1218,8 @@ final class HybridIdGeneratorTest extends TestCase
 
     public function testValidateRejectsWrongProfile(): void
     {
-        $genExtended = new HybridIdGenerator(profile: 'extended');
-        $genStandard = new HybridIdGenerator(profile: 'standard');
+        $genExtended = new HybridIdGenerator(profile: 'extended', node: 'T1');
+        $genStandard = new HybridIdGenerator(profile: 'standard', node: 'T1');
 
         $standardId = $genStandard->generate();
 
@@ -1150,7 +1229,7 @@ final class HybridIdGeneratorTest extends TestCase
 
     public function testValidateAcceptsMatchingPrefix(): void
     {
-        $gen = new HybridIdGenerator(profile: 'standard');
+        $gen = new HybridIdGenerator(profile: 'standard', node: 'T1');
         $id = $gen->generate('ord');
 
         $this->assertTrue($gen->validate($id, 'ord'));
@@ -1158,7 +1237,7 @@ final class HybridIdGeneratorTest extends TestCase
 
     public function testValidateRejectsMismatchedPrefix(): void
     {
-        $gen = new HybridIdGenerator(profile: 'standard');
+        $gen = new HybridIdGenerator(profile: 'standard', node: 'T1');
         $id = $gen->generate('usr');
 
         $this->assertFalse($gen->validate($id, 'ord'));
@@ -1166,7 +1245,7 @@ final class HybridIdGeneratorTest extends TestCase
 
     public function testValidateAcceptsUnprefixedWhenNoPrefixExpected(): void
     {
-        $gen = new HybridIdGenerator(profile: 'standard');
+        $gen = new HybridIdGenerator(profile: 'standard', node: 'T1');
         $id = $gen->generate();
 
         $this->assertTrue($gen->validate($id));
@@ -1174,7 +1253,7 @@ final class HybridIdGeneratorTest extends TestCase
 
     public function testValidateAcceptsPrefixedWhenNoPrefixExpected(): void
     {
-        $gen = new HybridIdGenerator(profile: 'standard');
+        $gen = new HybridIdGenerator(profile: 'standard', node: 'T1');
         $id = $gen->generate('usr');
 
         // No expected prefix — accepts any valid prefix
@@ -1183,7 +1262,7 @@ final class HybridIdGeneratorTest extends TestCase
 
     public function testValidateRejectsExpectedPrefixOnUnprefixedId(): void
     {
-        $gen = new HybridIdGenerator(profile: 'standard');
+        $gen = new HybridIdGenerator(profile: 'standard', node: 'T1');
         $id = $gen->generate();
 
         // Expecting 'usr' but ID has no prefix
@@ -1192,21 +1271,21 @@ final class HybridIdGeneratorTest extends TestCase
 
     public function testValidateRejectsEmpty(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
 
         $this->assertFalse($gen->validate(''));
     }
 
     public function testValidateRejectsInvalidCharacters(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
 
         $this->assertFalse($gen->validate('ABC!@#$%^&*()12345678'));
     }
 
     public function testValidateRejectsOversizedInput(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
 
         $this->assertFalse($gen->validate(str_repeat('A', 148)));
     }
@@ -1214,8 +1293,8 @@ final class HybridIdGeneratorTest extends TestCase
     public function testValidateAllProfiles(): void
     {
         $compact = new HybridIdGenerator(profile: 'compact');
-        $standard = new HybridIdGenerator(profile: 'standard');
-        $extended = new HybridIdGenerator(profile: 'extended');
+        $standard = new HybridIdGenerator(profile: 'standard', node: 'T1');
+        $extended = new HybridIdGenerator(profile: 'extended', node: 'T1');
 
         $compactId = $compact->generate('log');
         $standardId = $standard->generate('usr');
@@ -1234,7 +1313,7 @@ final class HybridIdGeneratorTest extends TestCase
 
     public function testValidateRejectsInvalidPrefixFormat(): void
     {
-        $gen = new HybridIdGenerator(profile: 'standard');
+        $gen = new HybridIdGenerator(profile: 'standard', node: 'T1');
 
         $this->assertFalse($gen->validate('USR_' . str_repeat('A', 20)));
         $this->assertFalse($gen->validate('1usr_' . str_repeat('A', 20)));
@@ -1277,14 +1356,15 @@ final class HybridIdGeneratorTest extends TestCase
 
     public function testParseAllProfiles(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
 
         $compact = HybridIdGenerator::parse($gen->compact());
         $standard = HybridIdGenerator::parse($gen->standard());
         $extended = HybridIdGenerator::parse($gen->extended());
 
         $this->assertSame('compact', $compact['profile']);
-        $this->assertSame(6, strlen($compact['random']));
+        $this->assertNull($compact['node']); // compact has no node
+        $this->assertSame(8, strlen($compact['random']));
 
         $this->assertSame('standard', $standard['profile']);
         $this->assertSame(10, strlen($standard['random']));
@@ -1293,15 +1373,18 @@ final class HybridIdGeneratorTest extends TestCase
         $this->assertSame(14, strlen($extended['random']));
     }
 
-    public function testParseInvalidIdReturnsPartialData(): void
+    public function testParseInvalidIdReturnsAllKeysAsNull(): void
     {
         $result = HybridIdGenerator::parse('usr_invalidbody');
 
         $this->assertFalse($result['valid']);
         $this->assertSame('usr', $result['prefix']);
         $this->assertSame('invalidbody', $result['body']);
-        $this->assertArrayNotHasKey('profile', $result);
-        $this->assertArrayNotHasKey('timestamp', $result);
+        $this->assertNull($result['profile']);
+        $this->assertNull($result['timestamp']);
+        $this->assertNull($result['datetime']);
+        $this->assertNull($result['node']);
+        $this->assertNull($result['random']);
     }
 
     public function testParseEmptyStringReturnsInvalid(): void
@@ -1324,7 +1407,7 @@ final class HybridIdGeneratorTest extends TestCase
 
     public function testParseTimestampMatchesExtract(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
         $id = $gen->generate('txn');
 
         $parsed = HybridIdGenerator::parse($id);
@@ -1370,21 +1453,214 @@ final class HybridIdGeneratorTest extends TestCase
 
     public function testEncodeBase62ThrowsOnOverflow(): void
     {
-        $this->expectException(\OverflowException::class);
+        $this->expectException(IdOverflowException::class);
 
-        $method = new \ReflectionMethod(HybridIdGenerator::class, 'encodeBase62');
-        $method->invoke(null, 3844, 2);
+        HybridIdGenerator::encodeBase62(3844, 2);
     }
 
     public function testEncodeBase62DoesNotThrowWithinBounds(): void
     {
-        $method = new \ReflectionMethod(HybridIdGenerator::class, 'encodeBase62');
-
-        $result = $method->invoke(null, 3843, 2);
+        $result = HybridIdGenerator::encodeBase62(3843, 2);
         $this->assertSame(2, strlen($result));
 
-        $result = $method->invoke(null, 0, 8);
+        $result = HybridIdGenerator::encodeBase62(0, 8);
         $this->assertSame('00000000', $result);
+    }
+
+    public function testDecodeBase62RoundTrip(): void
+    {
+        $values = [0, 1, 61, 62, 3843, 100000, PHP_INT_MAX >> 16];
+
+        foreach ($values as $value) {
+            $encoded = HybridIdGenerator::encodeBase62($value, 12);
+            $decoded = HybridIdGenerator::decodeBase62($encoded);
+
+            $this->assertSame($value, $decoded, "Round-trip failed for value {$value}");
+        }
+    }
+
+    public function testDecodeBase62ThrowsOnInvalidChar(): void
+    {
+        $this->expectException(InvalidIdException::class);
+        $this->expectExceptionMessage('Invalid base62 character');
+
+        HybridIdGenerator::decodeBase62('abc!def');
+    }
+
+    public function testDecodeBase62ThrowsOnEmptyString(): void
+    {
+        $this->expectException(InvalidIdException::class);
+        $this->expectExceptionMessage('Cannot decode empty string');
+
+        HybridIdGenerator::decodeBase62('');
+    }
+
+    public function testDecodeBase62ThrowsOnOverflow(): void
+    {
+        $this->expectException(IdOverflowException::class);
+        $this->expectExceptionMessage('exceeds 64-bit');
+
+        // 11 base62 chars max value = 62^11 - 1 > PHP_INT_MAX
+        HybridIdGenerator::decodeBase62('zzzzzzzzzzz');
+    }
+
+    public function testDecodeBase62HandlesLeadingZeros(): void
+    {
+        $this->assertSame(0, HybridIdGenerator::decodeBase62('0'));
+        $this->assertSame(0, HybridIdGenerator::decodeBase62('0000000000'));
+        $this->assertSame(0, HybridIdGenerator::decodeBase62('000000000000000'));
+        $this->assertSame(1, HybridIdGenerator::decodeBase62('00001'));
+        $this->assertSame(62, HybridIdGenerator::decodeBase62('00010'));
+    }
+
+    public function testDecodeBase62ThrowsOnExcessiveLength(): void
+    {
+        $this->expectException(IdOverflowException::class);
+        $this->expectExceptionMessage('exceeds 64-bit');
+
+        // 12+ chars always overflows — caught by early length guard
+        HybridIdGenerator::decodeBase62('zzzzzzzzzzzz');
+    }
+
+    public function testDecodeBase62HandlesMaxSafeValue(): void
+    {
+        // Encode PHP_INT_MAX and verify round-trip
+        $encoded = HybridIdGenerator::encodeBase62(PHP_INT_MAX, 11);
+        $decoded = HybridIdGenerator::decodeBase62($encoded);
+
+        $this->assertSame(PHP_INT_MAX, $decoded);
+    }
+
+    public function testDecodeBase62ThrowsOnValueJustAboveIntMax(): void
+    {
+        $this->expectException(IdOverflowException::class);
+
+        // Encode PHP_INT_MAX, then increment last char to force overflow
+        $encoded = HybridIdGenerator::encodeBase62(PHP_INT_MAX, 11);
+        $lastChar = $encoded[10];
+        $nextCharPos = (HybridIdGenerator::decodeBase62($lastChar)) + 1;
+
+        // If last char is 'z' (61), we can't increment — use a known overflow string instead
+        if ($nextCharPos > 61) {
+            // AzL8n0Y58m8 is PHP_INT_MAX in base62; the next representable value overflows
+            HybridIdGenerator::decodeBase62('AzL8n0Y58m9');
+        } else {
+            $overflowStr = substr($encoded, 0, 10) . '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'[$nextCharPos];
+            HybridIdGenerator::decodeBase62($overflowStr);
+        }
+    }
+
+    public function testEncodeBase62ThrowsOnNegative(): void
+    {
+        $this->expectException(IdOverflowException::class);
+        $this->expectExceptionMessage('negative');
+
+        HybridIdGenerator::encodeBase62(-1, 8);
+    }
+
+    public function testEncodeBase62ThrowsOnZeroLength(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Length must be at least 1');
+
+        HybridIdGenerator::encodeBase62(0, 0);
+    }
+
+    // -------------------------------------------------------------------------
+    // Batch generation (#118)
+    // -------------------------------------------------------------------------
+
+    public function testGenerateBatchReturnsCorrectCount(): void
+    {
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
+
+        $ids = $gen->generateBatch(10);
+
+        $this->assertCount(10, $ids);
+    }
+
+    public function testGenerateBatchReturnsUniqueIds(): void
+    {
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
+
+        $ids = $gen->generateBatch(100);
+
+        $this->assertCount(100, array_unique($ids));
+    }
+
+    public function testGenerateBatchIsMonotonicallyOrdered(): void
+    {
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
+
+        $ids = $gen->generateBatch(50);
+
+        for ($i = 1; $i < count($ids); $i++) {
+            $this->assertSame(
+                -1,
+                HybridIdGenerator::compare($ids[$i - 1], $ids[$i]),
+                "ID at index {$i} should be greater than ID at index " . ($i - 1),
+            );
+        }
+    }
+
+    public function testGenerateBatchAppliesPrefix(): void
+    {
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
+
+        $ids = $gen->generateBatch(5, 'usr');
+
+        foreach ($ids as $id) {
+            $this->assertStringStartsWith('usr_', $id);
+            $this->assertTrue(HybridIdGenerator::isValid($id));
+        }
+    }
+
+    public function testGenerateBatchRejectsZeroCount(): void
+    {
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
+
+        $this->expectException(\InvalidArgumentException::class);
+
+        $gen->generateBatch(0);
+    }
+
+    public function testGenerateBatchRejectsNegativeCount(): void
+    {
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
+
+        $this->expectException(\InvalidArgumentException::class);
+
+        $gen->generateBatch(-1);
+    }
+
+    public function testGenerateBatchRejectsExcessiveCount(): void
+    {
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
+
+        $this->expectException(\InvalidArgumentException::class);
+
+        $gen->generateBatch(10_001);
+    }
+
+    public function testGenerateBatchSingleIdWorks(): void
+    {
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
+
+        $ids = $gen->generateBatch(1);
+
+        $this->assertCount(1, $ids);
+        $this->assertTrue(HybridIdGenerator::isValid($ids[0]));
+    }
+
+    public function testGenerateBatchAllProfilesWork(): void
+    {
+        $compact = new HybridIdGenerator(profile: 'compact');
+        $standard = new HybridIdGenerator(profile: 'standard', node: 'T1');
+        $extended = new HybridIdGenerator(profile: 'extended', node: 'T1');
+
+        $this->assertCount(5, $compact->generateBatch(5));
+        $this->assertCount(5, $standard->generateBatch(5));
+        $this->assertCount(5, $extended->generateBatch(5));
     }
 
     // -------------------------------------------------------------------------
@@ -1411,7 +1687,7 @@ final class HybridIdGeneratorTest extends TestCase
 
     public function testMinForTimestampIsLowerBound(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
         $id = $gen->generate();
         $ts = HybridIdGenerator::extractTimestamp($id);
 
@@ -1422,7 +1698,7 @@ final class HybridIdGeneratorTest extends TestCase
 
     public function testMaxForTimestampIsUpperBound(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
         $id = $gen->generate();
         $ts = HybridIdGenerator::extractTimestamp($id);
         $body = $id; // unprefixed
@@ -1434,7 +1710,7 @@ final class HybridIdGeneratorTest extends TestCase
 
     public function testRangeHelpersBracketGeneratedIds(): void
     {
-        $gen = new HybridIdGenerator();
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
 
         $before = (int) (microtime(true) * 1000);
         $ids = [];
@@ -1484,7 +1760,7 @@ final class HybridIdGeneratorTest extends TestCase
 
     public function testRequireExplicitNodeThrowsWhenNodeMissing(): void
     {
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(NodeRequiredException::class);
         $this->expectExceptionMessage('Explicit node is required');
 
         new HybridIdGenerator(requireExplicitNode: true);
@@ -1497,12 +1773,53 @@ final class HybridIdGeneratorTest extends TestCase
         $this->assertSame('A1', $gen->getNode());
     }
 
-    public function testRequireExplicitNodeDefaultIsFalse(): void
+    public function testRequireExplicitNodeDefaultIsTrue(): void
     {
-        // Should not throw — auto-detection is allowed by default
-        $gen = new HybridIdGenerator();
+        // Default requireExplicitNode is true — standard profile throws without node
+        $this->expectException(NodeRequiredException::class);
+
+        new HybridIdGenerator();
+    }
+
+    public function testRequireExplicitNodeCompactDoesNotThrow(): void
+    {
+        // Compact profile has no node field — should not throw even with requireExplicitNode=true
+        $gen = new HybridIdGenerator(profile: Profile::Compact);
+
+        $this->assertSame(16, strlen($gen->generate()));
+    }
+
+    public function testRequireExplicitNodeFalseAllowsAutoDetect(): void
+    {
+        // Explicitly disabling requireExplicitNode allows auto-detection
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
 
         $this->assertSame(2, strlen($gen->getNode()));
+    }
+
+    public function testAutoDetectNodeIsNonDeterministic(): void
+    {
+        // Two instances should (almost certainly) get different auto-detected nodes
+        $gen1 = new HybridIdGenerator(requireExplicitNode: false);
+        $gen2 = new HybridIdGenerator(requireExplicitNode: false);
+
+        // With 3844 possible values, P(collision) ≈ 0.026% — run multiple times
+        $nodes = [];
+        for ($i = 0; $i < 10; $i++) {
+            $gen = new HybridIdGenerator(requireExplicitNode: false);
+            $nodes[] = $gen->getNode();
+        }
+
+        // At least 2 distinct values out of 10 (P(all same) ≈ (1/3844)^9 ≈ 0)
+        $this->assertGreaterThan(1, count(array_unique($nodes)));
+    }
+
+    public function testExtractNodeReturnsNullForCompact(): void
+    {
+        $gen = new HybridIdGenerator(profile: Profile::Compact);
+        $id = $gen->generate();
+
+        $this->assertNull(HybridIdGenerator::extractNode($id));
     }
 
     public function testFromEnvReadsRequireNode(): void
@@ -1512,7 +1829,7 @@ final class HybridIdGeneratorTest extends TestCase
             putenv('HYBRID_ID_NODE=');
             putenv('HYBRID_ID_REQUIRE_NODE=1');
 
-            $this->expectException(\InvalidArgumentException::class);
+            $this->expectException(NodeRequiredException::class);
             $this->expectExceptionMessage('Explicit node is required');
 
             HybridIdGenerator::fromEnv();

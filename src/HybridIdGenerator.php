@@ -4,11 +4,18 @@ declare(strict_types=1);
 
 namespace HybridId;
 
+use HybridId\Exception\IdOverflowException;
+use HybridId\Exception\InvalidIdException;
+use HybridId\Exception\InvalidPrefixException;
+use HybridId\Exception\InvalidProfileException;
+use HybridId\Exception\NodeRequiredException;
+
 final class HybridIdGenerator implements IdGenerator
 {
+    /** Base62 alphabet: digits, uppercase, lowercase (62 characters, URL-safe). */
     private const string BASE62 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
 
-    /** @var array<string, int> Reverse lookup: character => position for O(1) decoding */
+    /** Reverse lookup: character => position for O(1) decoding. */
     private const array BASE62_MAP = [
         '0' => 0,  '1' => 1,  '2' => 2,  '3' => 3,  '4' => 4,  '5' => 5,  '6' => 6,  '7' => 7,
         '8' => 8,  '9' => 9,  'A' => 10, 'B' => 11, 'C' => 12, 'D' => 13, 'E' => 14, 'F' => 15,
@@ -20,22 +27,17 @@ final class HybridIdGenerator implements IdGenerator
         'u' => 56, 'v' => 57, 'w' => 58, 'x' => 59, 'y' => 60, 'z' => 61,
     ];
 
-    /** @var array<string, array{length: int, ts: int, node: int, random: int}> */
-    private const array PROFILES = [
-        'compact'  => ['length' => 16, 'ts' => 8, 'node' => 2, 'random' => 6],
-        'standard' => ['length' => 20, 'ts' => 8, 'node' => 2, 'random' => 10],
-        'extended' => ['length' => 24, 'ts' => 8, 'node' => 2, 'random' => 14],
-    ];
-
-    /** @var array<int, string> Reverse lookup: length => profile name for O(1) detection */
-    private const array LENGTH_TO_PROFILE = [
-        16 => 'compact',
-        20 => 'standard',
-        24 => 'extended',
-    ];
-
+    /** Separator between prefix and body (Stripe convention). */
     private const string PREFIX_SEPARATOR = '_';
+
+    /** Maximum allowed prefix length (Stripe uses max 8). */
     private const int PREFIX_MAX_LENGTH = 8;
+
+    /** Matches valid ID characters (alphanumeric + underscore). */
+    private const string REGEX_ID_CHARS = '/^[a-zA-Z0-9_]+$/';
+
+    /** Matches valid prefix format (lowercase alphanumeric, starts with letter). */
+    private const string REGEX_PREFIX = '/^[a-z][a-z0-9]*$/';
 
     /**
      * Maximum possible ID length: PREFIX_MAX_LENGTH (8) + separator (1) + max body (138).
@@ -43,65 +45,76 @@ final class HybridIdGenerator implements IdGenerator
      */
     private const int MAX_ID_LENGTH = 147;
 
-    /** @var array<string, array{length: int, ts: int, node: int, random: int}> */
-    private static array $customProfiles = [];
+    private static ?ProfileRegistry $defaultRegistryInstance = null;
 
-    /** @var array<int, string> */
-    private static array $customLengthToProfile = [];
-
+    private readonly ProfileRegistryInterface $registry;
     private readonly string $profile;
     /** @var array{length: int, ts: int, node: int, random: int} */
     private readonly array $profileConfig;
     private readonly string $node;
     private readonly ?int $maxIdLength;
+    private readonly bool $blind;
+    private readonly ?string $blindSecret;
     private int $lastTimestamp = 0;
 
+    /**
+     * Maximum allowed drift (in ms) between the monotonic counter and wall-clock time.
+     * When exceeded, generation throws IdOverflowException to prevent unbounded
+     * future-dated timestamps.
+     */
+    private const int MAX_DRIFT_MS = 5000;
+
     public function __construct(
-        string $profile = 'standard',
+        Profile|string $profile = Profile::Standard,
         ?string $node = null,
         ?int $maxIdLength = null,
-        bool $requireExplicitNode = false,
+        bool $requireExplicitNode = true,
+        ?ProfileRegistryInterface $registry = null,
+        bool $blind = false,
     ) {
         if (PHP_INT_SIZE < 8) {
             throw new \RuntimeException('HybridId requires 64-bit PHP');
         }
 
-        $config = self::resolveProfile($profile);
+        $this->registry = $registry ?? self::defaultRegistry();
+
+        $profileName = $profile instanceof Profile ? $profile->value : $profile;
+        $config = $this->registry->get($profileName);
         if ($config === null) {
-            throw new \InvalidArgumentException(
-                sprintf(
-                    'Invalid profile "%s". Valid profiles: %s',
-                    $profile,
-                    implode(', ', self::profiles()),
-                ),
+            throw new InvalidProfileException(
+                sprintf('Unknown profile "%s"', $profileName),
             );
         }
-        $this->profile = $profile;
+        $this->profile = $profileName;
         $this->profileConfig = $config;
+        $this->blind = $blind;
+        $this->blindSecret = $blind ? self::secureRandomBytes(32) : null;
 
         if ($node !== null) {
             if (strlen($node) !== 2 || !self::isBase62String($node)) {
-                throw new \InvalidArgumentException('Node must be exactly 2 base62 characters (0-9, A-Z, a-z)');
+                throw new InvalidIdException('Node must be exactly 2 base62 characters (0-9, A-Z, a-z)');
             }
             $this->node = $node;
+        } elseif ($blind) {
+            // Blind mode: node is only used as HMAC input, secret differentiates instances
+            $this->node = self::autoDetectNode();
+        } elseif ($requireExplicitNode && $this->profileConfig['node'] > 0) {
+            throw new NodeRequiredException(
+                'Explicit node is required (requireExplicitNode is enabled). '
+                . 'Provide a 2-character base62 node identifier via the node parameter or HYBRID_ID_NODE env var.',
+            );
         } else {
-            if ($requireExplicitNode) {
-                throw new \InvalidArgumentException(
-                    'Explicit node is required (requireExplicitNode is enabled). '
-                    . 'Provide a 2-character base62 node identifier.',
-                );
-            }
             $this->node = self::autoDetectNode();
         }
 
         if ($maxIdLength !== null) {
             if ($maxIdLength < $this->profileConfig['length']) {
-                throw new \InvalidArgumentException(
+                throw new IdOverflowException(
                     sprintf(
                         'maxIdLength (%d) must be >= body length (%d) for profile "%s"',
                         $maxIdLength,
                         $this->profileConfig['length'],
-                        $this->profile,
+                        $profileName,
                     ),
                 );
             }
@@ -112,20 +125,70 @@ final class HybridIdGenerator implements IdGenerator
     /**
      * Create an instance configured from environment variables.
      *
-     * Reads HYBRID_ID_PROFILE and HYBRID_ID_NODE from the environment.
+     * Reads HYBRID_ID_PROFILE, HYBRID_ID_NODE, HYBRID_ID_REQUIRE_NODE,
+     * and HYBRID_ID_BLIND from the environment.
      * Pairs well with vlucas/phpdotenv for .env file support.
+     *
+     * Security note: treat HYBRID_ID_NODE as sensitive configuration.
+     * In shared hosting or containerized environments, ensure these
+     * variables cannot be overridden by untrusted parties.
+     *
+     * @since 4.0.0
      */
-    public static function fromEnv(): self
+    public static function fromEnv(?ProfileRegistryInterface $registry = null): self
     {
-        $profile = getenv('HYBRID_ID_PROFILE', true) ?: getenv('HYBRID_ID_PROFILE');
-        $node = getenv('HYBRID_ID_NODE', true) ?: getenv('HYBRID_ID_NODE');
-        $requireNode = getenv('HYBRID_ID_REQUIRE_NODE', true) ?: getenv('HYBRID_ID_REQUIRE_NODE');
+        $reg = $registry ?? self::defaultRegistry();
+
+        $profileValue = self::readEnv('HYBRID_ID_PROFILE') ?? 'standard';
+        $profile = Profile::tryFrom($profileValue) ?? $profileValue;
+        if (is_string($profile) && $reg->get($profile) === null) {
+            throw new InvalidProfileException(
+                sprintf('Invalid HYBRID_ID_PROFILE: "%s"', $profileValue),
+            );
+        }
+
+        $node = self::readEnv('HYBRID_ID_NODE');
+        if ($node !== null && (strlen($node) !== 2 || !self::isBase62String($node))) {
+            throw new \InvalidArgumentException(
+                sprintf('Invalid HYBRID_ID_NODE: "%s". Must be exactly 2 base62 characters.', $node),
+            );
+        }
+
+        // When HYBRID_ID_REQUIRE_NODE is not set, use the constructor default (true).
+        // Set HYBRID_ID_REQUIRE_NODE=0 to explicitly disable the guard.
+        $requireNodeEnv = self::readEnv('HYBRID_ID_REQUIRE_NODE');
+        $requireExplicit = ($requireNodeEnv === null) ? true : $requireNodeEnv !== '0';
+
+        $blindEnv = self::readEnv('HYBRID_ID_BLIND');
+        $blind = ($blindEnv !== null && $blindEnv !== '0');
 
         return new self(
-            profile: ($profile !== false && $profile !== '') ? $profile : 'standard',
-            node: ($node !== false && $node !== '') ? $node : null,
-            requireExplicitNode: $requireNode !== false && $requireNode !== '' && $requireNode !== '0',
+            profile: $profile,
+            node: $node,
+            requireExplicitNode: $requireExplicit,
+            registry: $reg,
+            blind: $blind,
         );
+    }
+
+    /**
+     * Read an environment variable consistently, checking local-only first.
+     *
+     * Returns null when the variable is not set or empty.
+     */
+    private static function readEnv(string $name): ?string
+    {
+        $value = getenv($name, true);
+        if ($value === false) {
+            $value = getenv($name);
+        }
+
+        return ($value !== false && $value !== '') ? $value : null;
+    }
+
+    private static function defaultRegistry(): ProfileRegistry
+    {
+        return self::$defaultRegistryInstance ??= ProfileRegistry::withDefaults();
     }
 
     // -------------------------------------------------------------------------
@@ -134,6 +197,12 @@ final class HybridIdGenerator implements IdGenerator
 
     /**
      * Generate an ID using this instance's configured profile.
+     *
+     * @note NOT thread-safe. Each thread/coroutine (Swoole, ReactPHP, Laravel Octane)
+     *       must use its own HybridIdGenerator instance to avoid timestamp collisions.
+     *
+     * @throws IdOverflowException If monotonic drift exceeds MAX_DRIFT_MS or maxIdLength exceeded
+     * @throws InvalidPrefixException If prefix format is invalid
      */
     public function generate(?string $prefix = null): string
     {
@@ -145,6 +214,9 @@ final class HybridIdGenerator implements IdGenerator
      *
      * @note For multi-node deployments with more than a few hundred IDs/second,
      *       prefer standard() or extended() and set explicit node IDs.
+     *
+     * @throws IdOverflowException If monotonic drift exceeds MAX_DRIFT_MS or maxIdLength exceeded
+     * @throws InvalidPrefixException If prefix format is invalid
      */
     public function compact(?string $prefix = null): string
     {
@@ -153,6 +225,9 @@ final class HybridIdGenerator implements IdGenerator
 
     /**
      * Generate a standard ID (20 chars: 8ts + 2node + 10random, ~59.5 bits entropy).
+     *
+     * @throws IdOverflowException If monotonic drift exceeds MAX_DRIFT_MS or maxIdLength exceeded
+     * @throws InvalidPrefixException If prefix format is invalid
      */
     public function standard(?string $prefix = null): string
     {
@@ -161,10 +236,44 @@ final class HybridIdGenerator implements IdGenerator
 
     /**
      * Generate an extended ID (24 chars: 8ts + 2node + 14random, ~83.4 bits entropy).
+     *
+     * @throws IdOverflowException If monotonic drift exceeds MAX_DRIFT_MS or maxIdLength exceeded
+     * @throws InvalidPrefixException If prefix format is invalid
      */
     public function extended(?string $prefix = null): string
     {
         return $this->generateWithProfile('extended', $prefix);
+    }
+
+    /**
+     * Generate multiple IDs in a single call.
+     *
+     * @param int<1, 10000> $count Number of IDs to generate (max 10,000)
+     *
+     * @note Large batches advance the monotonic counter, causing timestamp drift
+     *       proportional to the batch size (e.g. 5,000 IDs ≈ 5s drift). The drift
+     *       cap (MAX_DRIFT_MS) will throw IdOverflowException if exceeded.
+     *
+     * @throws \InvalidArgumentException If count is out of range
+     * @throws IdOverflowException If monotonic drift exceeds MAX_DRIFT_MS
+     * @throws InvalidPrefixException If prefix format is invalid
+     *
+     * @since 4.0.0
+     */
+    public function generateBatch(int $count, ?string $prefix = null): array
+    {
+        if ($count < 1 || $count > 10_000) {
+            throw new \InvalidArgumentException(
+                sprintf('Batch count must be between 1 and 10,000, got %d', $count),
+            );
+        }
+
+        $ids = [];
+        for ($i = 0; $i < $count; $i++) {
+            $ids[] = $this->generate($prefix);
+        }
+
+        return $ids;
     }
 
     // -------------------------------------------------------------------------
@@ -189,9 +298,16 @@ final class HybridIdGenerator implements IdGenerator
         return $this->profileConfig['length'];
     }
 
+    /** @since 4.0.0 */
     public function getMaxIdLength(): ?int
     {
         return $this->maxIdLength;
+    }
+
+    /** @since 4.0.0 */
+    public function isBlind(): bool
+    {
+        return $this->blind;
     }
 
     // -------------------------------------------------------------------------
@@ -214,7 +330,7 @@ final class HybridIdGenerator implements IdGenerator
             return false;
         }
 
-        if (!preg_match('/^[a-zA-Z0-9_]+$/', $id)) {
+        if (!preg_match(self::REGEX_ID_CHARS, $id)) {
             return false;
         }
 
@@ -245,11 +361,20 @@ final class HybridIdGenerator implements IdGenerator
 
     // -------------------------------------------------------------------------
     // Static utilities (no instance needed)
+    //
+    // NOTE: static methods below use the global default registry, which only
+    // knows about built-in profiles + those registered via the deprecated
+    // registerProfile(). For custom profiles, use instance methods or pass
+    // a ProfileRegistry via constructor injection.
     // -------------------------------------------------------------------------
 
     /**
      * Validate that a string is a well-formed HybridId of any known profile length.
      * Handles both prefixed and unprefixed IDs.
+     *
+     * @note Uses the global default registry — custom profiles registered via an
+     *       injected ProfileRegistry are not visible here. Use validate() on an
+     *       instance instead when working with custom profiles.
      */
     public static function isValid(string $id): bool
     {
@@ -261,16 +386,22 @@ final class HybridIdGenerator implements IdGenerator
      *
      * @param int $maxPrefixLength Maximum prefix length to accommodate (0 = no prefix)
      * @return int Column size in characters
+     *
+     * @throws InvalidPrefixException If maxPrefixLength is out of range
+     * @throws InvalidProfileException If profile is unknown
+     *
+     * @since 4.0.0
      */
-    public static function recommendedColumnSize(string $profile, int $maxPrefixLength = 0): int
+    public static function recommendedColumnSize(Profile|string $profile, int $maxPrefixLength = 0): int
     {
         if ($maxPrefixLength < 0 || $maxPrefixLength > self::PREFIX_MAX_LENGTH) {
-            throw new \InvalidArgumentException(
+            throw new InvalidPrefixException(
                 sprintf('maxPrefixLength must be between 0 and %d', self::PREFIX_MAX_LENGTH),
             );
         }
 
-        $bodyLength = self::profileConfig($profile)['length'];
+        $profileName = $profile instanceof Profile ? $profile->value : $profile;
+        $bodyLength = self::profileConfig($profileName)['length'];
 
         if ($maxPrefixLength === 0) {
             return $bodyLength;
@@ -282,15 +413,26 @@ final class HybridIdGenerator implements IdGenerator
     /**
      * Parse a HybridId into all its components in a single pass.
      *
-     * Returns an array with 'valid' => true and all components for valid IDs,
-     * or 'valid' => false with partial data for invalid IDs.
+     * Always returns all keys regardless of validity. When 'valid' is false,
+     * component keys (profile, timestamp, datetime, node, random) are null.
      *
-     * @return array{valid: bool, prefix: ?string, body: ?string, profile?: string, timestamp?: int, datetime?: ?\DateTimeImmutable, node?: string, random?: string}
+     * @note Uses the global default registry — custom profiles registered via an
+     *       injected ProfileRegistry are not visible here.
+     *
+     * @return array{valid: bool, prefix: ?string, body: ?string, profile: ?string, timestamp: ?int, datetime: ?\DateTimeImmutable, node: ?string, random: ?string}
+     *
+     * @since 4.0.0
      */
     public static function parse(string $id): array
     {
-        if ($id === '' || strlen($id) > self::MAX_ID_LENGTH || !preg_match('/^[a-zA-Z0-9_]+$/', $id)) {
-            return ['valid' => false, 'prefix' => null, 'body' => null];
+        $nullResult = [
+            'valid' => false, 'prefix' => null, 'body' => null,
+            'profile' => null, 'timestamp' => null, 'datetime' => null,
+            'node' => null, 'random' => null,
+        ];
+
+        if ($id === '' || strlen($id) > self::MAX_ID_LENGTH || !preg_match(self::REGEX_ID_CHARS, $id)) {
+            return $nullResult;
         }
 
         $prefix = self::extractPrefix($id);
@@ -298,12 +440,11 @@ final class HybridIdGenerator implements IdGenerator
         $profile = self::detectProfile($id);
 
         if ($profile === null) {
-            return [
-                'valid' => false,
-                'prefix' => $prefix,
-                'body' => $body,
-            ];
+            return [...$nullResult, 'prefix' => $prefix, 'body' => $body];
         }
+
+        $config = self::profileConfig($profile);
+        $nodeLen = $config['node'];
 
         $timestamp = self::decodeBase62(substr($body, 0, 8));
         $seconds = intdiv($timestamp, 1000);
@@ -321,13 +462,15 @@ final class HybridIdGenerator implements IdGenerator
             'body' => $body,
             'timestamp' => $timestamp,
             'datetime' => $datetime !== false ? $datetime : null,
-            'node' => substr($body, 8, 2),
-            'random' => substr($body, 10),
+            'node' => $nodeLen > 0 ? substr($body, 8, $nodeLen) : null,
+            'random' => substr($body, 8 + $nodeLen),
         ];
     }
 
     /**
      * Extract the millisecond timestamp from a HybridId (with or without prefix).
+     *
+     * @throws InvalidIdException If the ID format is invalid
      */
     public static function extractTimestamp(string $id): int
     {
@@ -344,6 +487,8 @@ final class HybridIdGenerator implements IdGenerator
      * @note Under high throughput the monotonic guard increments timestamps
      *       artificially, so the returned time may be slightly ahead of the
      *       actual wall-clock time at which the ID was created.
+     *
+     * @throws InvalidIdException If the ID format is invalid
      */
     public static function extractDateTime(string $id): \DateTimeImmutable
     {
@@ -356,25 +501,37 @@ final class HybridIdGenerator implements IdGenerator
             sprintf('%d %06d', $seconds, $microseconds),
         );
 
+        // @codeCoverageIgnoreStart — unreachable: extractTimestamp() validates the ID
+        // and any valid millisecond timestamp produces a valid DateTime.
         if ($dt === false) {
             throw new \RuntimeException(
                 sprintf('Failed to create DateTime from HybridId (timestamp: %d ms)', $timestampMs),
             );
         }
+        // @codeCoverageIgnoreEnd
 
         return $dt;
     }
 
     /**
-     * Extract the 2-character node identifier from a HybridId (with or without prefix).
+     * Extract the node identifier from a HybridId, or null for node-less profiles (compact).
+     *
+     * @throws InvalidIdException If the ID format is invalid
      */
-    public static function extractNode(string $id): string
+    public static function extractNode(string $id): ?string
     {
         self::assertValid($id);
 
+        $profile = self::detectProfile($id);
+        $config = self::profileConfig($profile);
+
+        if ($config['node'] === 0) {
+            return null;
+        }
+
         $raw = self::stripPrefix($id);
 
-        return substr($raw, 8, 2);
+        return substr($raw, 8, $config['node']);
     }
 
     /**
@@ -394,6 +551,9 @@ final class HybridIdGenerator implements IdGenerator
     /**
      * Detect which profile a HybridId belongs to, or null if invalid.
      * Handles both prefixed and unprefixed IDs.
+     *
+     * @note Uses the global default registry — custom profiles registered via an
+     *       injected ProfileRegistry are not visible here.
      */
     public static function detectProfile(string $id): ?string
     {
@@ -408,7 +568,7 @@ final class HybridIdGenerator implements IdGenerator
             return null;
         }
 
-        $profile = self::resolveProfileByLength(strlen($raw));
+        $profile = self::defaultRegistry()->getByLength(strlen($raw));
 
         if ($profile === null || !self::isBase62String($raw)) {
             return null;
@@ -419,14 +579,17 @@ final class HybridIdGenerator implements IdGenerator
 
     /**
      * Get the random entropy bits for a given profile.
+     *
+     * @throws InvalidProfileException If profile is unknown
      */
-    public static function entropy(string $profile): float
+    public static function entropy(Profile|string $profile): float
     {
-        $config = self::resolveProfile($profile);
+        $profileName = $profile instanceof Profile ? $profile->value : $profile;
+        $config = self::defaultRegistry()->get($profileName);
 
         if ($config === null) {
-            throw new \InvalidArgumentException(
-                sprintf('Invalid profile "%s". Valid profiles: %s', $profile, implode(', ', self::profiles())),
+            throw new InvalidProfileException(
+                sprintf('Unknown profile "%s"', $profileName),
             );
         }
 
@@ -437,14 +600,19 @@ final class HybridIdGenerator implements IdGenerator
      * Get profile configuration details.
      *
      * @return array{length: int, ts: int, node: int, random: int}
+     *
+     * @throws InvalidProfileException If profile is unknown
+     *
+     * @since 4.0.0
      */
-    public static function profileConfig(string $profile): array
+    public static function profileConfig(Profile|string $profile): array
     {
-        $config = self::resolveProfile($profile);
+        $profileName = $profile instanceof Profile ? $profile->value : $profile;
+        $config = self::defaultRegistry()->get($profileName);
 
         if ($config === null) {
-            throw new \InvalidArgumentException(
-                sprintf('Invalid profile "%s". Valid profiles: %s', $profile, implode(', ', self::profiles())),
+            throw new InvalidProfileException(
+                sprintf('Unknown profile "%s"', $profileName),
             );
         }
 
@@ -458,7 +626,7 @@ final class HybridIdGenerator implements IdGenerator
      */
     public static function profiles(): array
     {
-        return [...array_keys(self::PROFILES), ...array_keys(self::$customProfiles)];
+        return self::defaultRegistry()->all();
     }
 
     /**
@@ -467,54 +635,39 @@ final class HybridIdGenerator implements IdGenerator
      * Timestamp (8) and node (2) are fixed — only random is configurable.
      * Total length = 10 + random.
      *
-     * @note Call during application bootstrap only, before creating any
-     *       generator instances. The profile registry is global (static) and
-     *       mutations after generators are constructed will not affect
-     *       existing instances' cached configuration.
+     * @deprecated 4.0.0 Use ProfileRegistry::register() via constructor injection instead.
+     *             This mutates global static state and is UNSAFE in long-lived processes
+     *             (Swoole, RoadRunner, FrankenPHP, Laravel Octane) or multi-tenant environments
+     *             where one tenant's custom profiles would leak to all others.
      */
     public static function registerProfile(string $name, int $random): void
     {
-        if (!preg_match('/^[a-z][a-z0-9]*$/', $name)) {
-            throw new \InvalidArgumentException('Profile name must be lowercase alphanumeric, starting with a letter');
-        }
-
-        if (self::resolveProfile($name) !== null) {
-            throw new \InvalidArgumentException(
-                sprintf('Profile "%s" already exists', $name),
-            );
-        }
-
-        if ($random < 6 || $random > 128) {
-            throw new \InvalidArgumentException('Random length must be between 6 and 128');
-        }
-
-        $length = 8 + 2 + $random;
-
-        $existing = self::resolveProfileByLength($length);
-        if ($existing !== null) {
-            throw new \InvalidArgumentException(
-                sprintf('Length %d conflicts with existing profile "%s"', $length, $existing),
-            );
-        }
-
-        self::$customProfiles[$name] = [
-            'length' => $length,
-            'ts' => 8,
-            'node' => 2,
-            'random' => $random,
-        ];
-        self::$customLengthToProfile[$length] = $name;
+        @trigger_error(
+            'HybridIdGenerator::registerProfile() is deprecated since 4.0.0. '
+            . 'Migrate to: $reg = ProfileRegistry::withDefaults(); $reg->register("name", 10); '
+            . 'new HybridIdGenerator(registry: $reg). '
+            . 'Note: this method mutates the global registry only, not injected registries.',
+            E_USER_DEPRECATED,
+        );
+        self::defaultRegistry()->register($name, $random);
     }
 
     /**
      * Remove all custom profiles.
      *
      * @internal Intended for testing only.
+     * @deprecated 4.0.0 Use ProfileRegistry::reset() via constructor injection instead.
+     *             This mutates global static state — see registerProfile() for risks.
      */
     public static function resetProfiles(): void
     {
-        self::$customProfiles = [];
-        self::$customLengthToProfile = [];
+        @trigger_error(
+            'HybridIdGenerator::resetProfiles() is deprecated since 4.0.0. '
+            . 'Migrate to: create a fresh ProfileRegistry instance instead of resetting global state. '
+            . 'Note: this method resets the global registry only, not injected registries.',
+            E_USER_DEPRECATED,
+        );
+        self::defaultRegistry()->reset();
     }
 
     /**
@@ -524,6 +677,8 @@ final class HybridIdGenerator implements IdGenerator
      * Returns -1, 0, or 1 — compatible with usort() and spaceship operator convention.
      * Returns 0 only when both IDs are byte-identical (after prefix stripping).
      * Handles prefixed IDs by stripping prefixes before comparison.
+     *
+     * @throws InvalidIdException If either ID format is invalid
      */
     public static function compare(string $a, string $b): int
     {
@@ -541,10 +696,16 @@ final class HybridIdGenerator implements IdGenerator
      *
      * Useful for constructing inclusive lower bounds in DB range queries:
      *   WHERE id >= minForTimestamp($startMs)
+     *
+     * @throws InvalidProfileException If profile is unknown
+     * @throws IdOverflowException If timestamp exceeds encodable range
+     *
+     * @since 4.0.0
      */
-    public static function minForTimestamp(int $timestampMs, string $profile = 'standard'): string
+    public static function minForTimestamp(int $timestampMs, Profile|string $profile = Profile::Standard): string
     {
-        $config = self::profileConfig($profile);
+        $profileName = $profile instanceof Profile ? $profile->value : $profile;
+        $config = self::profileConfig($profileName);
         $ts = self::encodeBase62($timestampMs, $config['ts']);
 
         return $ts . str_repeat('0', $config['node'] + $config['random']);
@@ -555,10 +716,16 @@ final class HybridIdGenerator implements IdGenerator
      *
      * Useful for constructing inclusive upper bounds in DB range queries:
      *   WHERE id <= maxForTimestamp($endMs)
+     *
+     * @throws InvalidProfileException If profile is unknown
+     * @throws IdOverflowException If timestamp exceeds encodable range
+     *
+     * @since 4.0.0
      */
-    public static function maxForTimestamp(int $timestampMs, string $profile = 'standard'): string
+    public static function maxForTimestamp(int $timestampMs, Profile|string $profile = Profile::Standard): string
     {
-        $config = self::profileConfig($profile);
+        $profileName = $profile instanceof Profile ? $profile->value : $profile;
+        $config = self::profileConfig($profileName);
         $ts = self::encodeBase62($timestampMs, $config['ts']);
 
         return $ts . str_repeat('z', $config['node'] + $config['random']);
@@ -568,46 +735,52 @@ final class HybridIdGenerator implements IdGenerator
     // Internal
     // -------------------------------------------------------------------------
 
-    /**
-     * @return array{length: int, ts: int, node: int, random: int}|null
-     */
-    private static function resolveProfile(string $name): ?array
-    {
-        return self::PROFILES[$name] ?? self::$customProfiles[$name] ?? null;
-    }
-
-    private static function resolveProfileByLength(int $length): ?string
-    {
-        return self::LENGTH_TO_PROFILE[$length] ?? self::$customLengthToProfile[$length] ?? null;
-    }
-
     private function generateWithProfile(string $profile, ?string $prefix): string
     {
-        $config = $profile === $this->profile ? $this->profileConfig : self::resolveProfile($profile);
+        $config = $profile === $this->profile ? $this->profileConfig : $this->registry->get($profile);
 
         $now = (int) (microtime(true) * 1000);
 
         // Monotonic guard: if clock drifts backward or same ms, increment to guarantee
         // strict ordering and eliminate intra-millisecond collision on the timestamp portion.
-        // Note: this does not cap forward drift. If the system clock jumps ahead and then
-        // corrects, the guard holds the inflated timestamp until wall-clock time catches up.
-        // This preserves ordering guarantees at the cost of timestamps appearing ahead of
-        // real time during the catch-up window.
         if ($now <= $this->lastTimestamp) {
             $now = $this->lastTimestamp + 1;
+
+            // Cap forward drift to prevent unbounded future-dated timestamps under
+            // sustained high throughput.
+            $realNow = (int) (microtime(true) * 1000);
+            if ($now - $realNow > self::MAX_DRIFT_MS) {
+                throw new IdOverflowException(
+                    sprintf(
+                        'Monotonic timestamp drift exceeds %dms. Reduce generation rate or use multiple instances.',
+                        self::MAX_DRIFT_MS,
+                    ),
+                );
+            }
         }
 
-        $timestamp = self::encodeBase62($now, $config['ts']);
         $random = self::randomBase62($config['random']);
+
+        if ($this->blind) {
+            $hmacInput = pack('J', $now) . ($config['node'] > 0 ? $this->node : '');
+            $hmacHex = hash_hmac('sha256', $hmacInput, $this->blindSecret);
+            $opaqueLen = $config['ts'] + $config['node'];
+            $hmacValue = hexdec(substr($hmacHex, 0, 15)) % (62 ** $opaqueLen);
+            $opaquePrefix = self::encodeBase62($hmacValue, $opaqueLen);
+            $id = $opaquePrefix . $random;
+        } else {
+            $timestamp = self::encodeBase62($now, $config['ts']);
+            $id = $config['node'] > 0
+                ? $timestamp . $this->node . $random
+                : $timestamp . $random;
+        }
 
         // Only update after successful generation to prevent counter desync on failure.
         $this->lastTimestamp = $now;
-
-        $id = $timestamp . $this->node . $random;
         $fullId = self::applyPrefix($id, $prefix);
 
         if ($this->maxIdLength !== null && strlen($fullId) > $this->maxIdLength) {
-            throw new \OverflowException(
+            throw new IdOverflowException(
                 sprintf(
                     'Generated ID length %d exceeds maxIdLength %d. Use a shorter prefix or increase maxIdLength',
                     strlen($fullId),
@@ -620,26 +793,43 @@ final class HybridIdGenerator implements IdGenerator
     }
 
     /**
-     * Derive a deterministic 2-char node from hostname + PID.
+     * Generate a random 2-char node identifier.
      *
-     * Produces 3,844 possible values (62^2). By the birthday paradox,
-     * 50% collision probability is reached at ~74 distinct host:pid pairs.
-     * For deployments with more than a handful of nodes, set the node explicitly.
+     * Uses cryptographically secure random bytes to produce one of 3,844
+     * possible values (62^2). This is a dev/testing fallback — production
+     * deployments should always set an explicit node to guarantee uniqueness.
+     *
+     * Modulo bias: 65536 % 3844 = 120 → values [0, 119] are ~0.003% more
+     * likely. Negligible for a non-deterministic fallback.
      */
     private static function autoDetectNode(): string
     {
-        $raw = (gethostname() ?: 'unknown') . ':' . getmypid();
-        $hash = crc32($raw) & 0x7FFFFFFF;
-        // 62^2 = 3844 possible values, fitting exactly 2 base62 chars.
-        // Modulo bias: 2^31 % 3844 = 3148 non-zero, so values [0, 695] have a
-        // 1-in-558932 (~0.00018%) higher probability. Negligible for node hashing.
-        $nodeNum = $hash % 3844;
+        $bytes = self::secureRandomBytes(2);
+        $nodeNum = (ord($bytes[0]) << 8 | ord($bytes[1])) % 3844;
 
         return self::encodeBase62($nodeNum, 2);
     }
 
-    private static function encodeBase62(int $num, int $length): string
+    /**
+     * Encode an integer to base62 string with fixed length.
+     *
+     * @internal Public for UuidConverter access. Stable API — safe to use.
+     *
+     * @throws \InvalidArgumentException If length < 1
+     * @throws IdOverflowException If value is negative or exceeds length capacity
+     *
+     * @since 4.0.0
+     */
+    public static function encodeBase62(int $num, int $length): string
     {
+        if ($length < 1) {
+            throw new \InvalidArgumentException('Length must be at least 1');
+        }
+
+        if ($num < 0) {
+            throw new IdOverflowException('Cannot encode negative value');
+        }
+
         if ($num === 0) {
             return str_repeat('0', $length);
         }
@@ -653,7 +843,7 @@ final class HybridIdGenerator implements IdGenerator
         $encoded = str_pad($encoded, $length, '0', STR_PAD_LEFT);
 
         if (strlen($encoded) > $length) {
-            throw new \OverflowException(
+            throw new IdOverflowException(
                 sprintf('Value exceeds maximum for %d base62 characters', $length),
             );
         }
@@ -661,8 +851,31 @@ final class HybridIdGenerator implements IdGenerator
         return $encoded;
     }
 
-    private static function decodeBase62(string $str): int
+    /**
+     * Decode a base62 string to integer.
+     *
+     * @internal Public for UuidConverter access. Stable API — safe to use.
+     *
+     * @throws InvalidIdException If string is empty or contains invalid characters
+     * @throws IdOverflowException If value exceeds 64-bit integer range
+     *
+     * @since 4.0.0
+     */
+    public static function decodeBase62(string $str): int
     {
+        if ($str === '') {
+            throw new InvalidIdException('Cannot decode empty string');
+        }
+
+        // Early guard: strip leading zeros to count significant digits.
+        // 62^11 > PHP_INT_MAX on 64-bit, so more than 11 significant base62
+        // digits always overflows. Strings of exactly 11 significant chars
+        // may or may not overflow, so the arithmetic check handles those.
+        $significant = ltrim($str, '0');
+        if ($significant !== '' && strlen($significant) > 11) {
+            throw new IdOverflowException('Value exceeds 64-bit integer range');
+        }
+
         $result = 0;
         $len = strlen($str);
 
@@ -670,7 +883,14 @@ final class HybridIdGenerator implements IdGenerator
             $pos = self::BASE62_MAP[$str[$i]] ?? null;
 
             if ($pos === null) {
-                throw new \InvalidArgumentException("Invalid base62 character: {$str[$i]}");
+                throw new InvalidIdException("Invalid base62 character: {$str[$i]}");
+            }
+
+            // Check for overflow before performing the operation.
+            // This avoids relying on is_float() which may not catch all
+            // overflow scenarios (e.g. silent wrap to negative on some builds).
+            if ($result > intdiv(PHP_INT_MAX - $pos, 62)) {
+                throw new IdOverflowException('Value exceeds 64-bit integer range');
             }
 
             $result = $result * 62 + $pos;
@@ -682,14 +902,15 @@ final class HybridIdGenerator implements IdGenerator
     private static function randomBase62(int $length): string
     {
         $limit = 248; // largest multiple of 62 ≤ 255 (4 × 62), eliminates modulo bias
-        $chars = [];
-        $buffer = random_bytes((int) ceil($length * 1.25));
+        $chars = '';
+        $charCount = 0;
+        $buffer = self::secureRandomBytes((int) ceil($length * 1.25));
         $pos = 0;
         $bufLen = strlen($buffer);
 
-        while (count($chars) < $length) {
+        while ($charCount < $length) {
             if ($pos >= $bufLen) {
-                $buffer = random_bytes((int) ceil(($length - count($chars)) * 1.25));
+                $buffer = self::secureRandomBytes((int) ceil(($length - $charCount) * 1.25));
                 $pos = 0;
                 $bufLen = strlen($buffer);
             }
@@ -697,11 +918,12 @@ final class HybridIdGenerator implements IdGenerator
             $byte = ord($buffer[$pos++]);
 
             if ($byte < $limit) {
-                $chars[] = self::BASE62[$byte % 62];
+                $chars .= self::BASE62[$byte % 62];
+                $charCount++;
             }
         }
 
-        return implode('', $chars);
+        return $chars;
     }
 
     private static function isBase62String(string $str): bool
@@ -716,7 +938,7 @@ final class HybridIdGenerator implements IdGenerator
     private static function assertValid(string $id): void
     {
         if (!self::isValid($id)) {
-            throw new \InvalidArgumentException('Invalid HybridId format');
+            throw new InvalidIdException('Invalid HybridId format');
         }
     }
 
@@ -735,17 +957,34 @@ final class HybridIdGenerator implements IdGenerator
     {
         return $prefix !== ''
             && strlen($prefix) <= self::PREFIX_MAX_LENGTH
-            && preg_match('/^[a-z][a-z0-9]*$/', $prefix) === 1;
+            && preg_match(self::REGEX_PREFIX, $prefix) === 1;
     }
 
     private static function validatePrefix(string $prefix): void
     {
         if (!self::isValidPrefix($prefix)) {
-            throw new \InvalidArgumentException(
+            throw new InvalidPrefixException(
                 sprintf(
                     'Prefix must be 1-%d lowercase alphanumeric characters, starting with a letter',
                     self::PREFIX_MAX_LENGTH,
                 ),
+            );
+        }
+    }
+
+    /**
+     * Wrapper around random_bytes() that converts CSPRNG failures into
+     * a RuntimeException within the library's exception hierarchy.
+     */
+    private static function secureRandomBytes(int $length): string
+    {
+        try {
+            return random_bytes($length);
+        } catch (\Random\RandomException $e) {
+            throw new \RuntimeException(
+                'Failed to generate cryptographically secure random bytes',
+                0,
+                $e,
             );
         }
     }
@@ -758,6 +997,14 @@ final class HybridIdGenerator implements IdGenerator
             return $id;
         }
 
-        return substr($id, $pos + 1);
+        $body = substr($id, $pos + 1);
+
+        // Multiple underscores → not a valid prefixed ID, return unchanged
+        // to fail downstream validation cleanly.
+        if (str_contains($body, self::PREFIX_SEPARATOR)) {
+            return $id;
+        }
+
+        return $body;
     }
 }

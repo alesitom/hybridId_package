@@ -41,6 +41,7 @@ final class Application
         $count = 1;
         $node = null;
         $prefix = null;
+        $blind = false;
 
         for ($i = 0, $len = count($args); $i < $len; $i++) {
             switch ($args[$i]) {
@@ -79,6 +80,9 @@ final class Application
                     }
                     $prefix = $args[++$i];
                     break;
+                case '--blind':
+                    $blind = true;
+                    break;
                 default:
                     $this->output->error(
                         str_starts_with($args[$i], '-')
@@ -99,7 +103,7 @@ final class Application
         }
 
         try {
-            $gen = new HybridIdGenerator(profile: $profile, node: $node);
+            $gen = new HybridIdGenerator(profile: $profile, node: $node, requireExplicitNode: false, blind: $blind);
         } catch (\InvalidArgumentException $e) {
             $this->output->error(self::sanitize($e->getMessage()));
             return 1;
@@ -139,7 +143,8 @@ final class Application
         $datetime = HybridIdGenerator::extractDateTime($id);
         $node = HybridIdGenerator::extractNode($id);
         $rawId = $prefix !== null ? substr($id, strlen($prefix) + 1) : $id;
-        $random = substr($rawId, 10);
+        $randomOffset = 8 + $config['node'];
+        $random = substr($rawId, $randomOffset);
         $entropy = HybridIdGenerator::entropy($profile);
 
         $this->output->writeln('');
@@ -150,7 +155,9 @@ final class Application
         $this->output->writeln("  Profile:    {$profile} ({$config['length']} chars)");
         $this->output->writeln("  Timestamp:  {$timestamp}");
         $this->output->writeln("  DateTime:   {$datetime->format('Y-m-d H:i:s.v')}");
-        $this->output->writeln("  Node:       {$node}");
+        if ($node !== null) {
+            $this->output->writeln("  Node:       {$node}");
+        }
         $this->output->writeln("  Random:     {$random}");
         $this->output->writeln("  Entropy:    {$entropy} bits");
         $this->output->writeln("  Valid:      yes");
@@ -174,7 +181,9 @@ final class Application
         foreach (HybridIdGenerator::profiles() as $name) {
             $config = HybridIdGenerator::profileConfig($name);
             $entropy = HybridIdGenerator::entropy($name);
-            $structure = "{$config['ts']}ts + {$config['node']}node + {$config['random']}rand";
+            $structure = $config['node'] > 0
+                ? "{$config['ts']}ts + {$config['node']}node + {$config['random']}rand"
+                : "{$config['ts']}ts + {$config['random']}rand";
             $cmp = $comparisons[$name] ?? 'custom';
 
             $this->output->writeln(sprintf(
