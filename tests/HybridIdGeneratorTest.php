@@ -205,6 +205,32 @@ final class HybridIdGeneratorTest extends TestCase
         $this->assertGreaterThan($ts2, $ts1);
     }
 
+    public function testMonotonicDriftThrowsWhenExceeded(): void
+    {
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
+
+        // Generate enough IDs to push drift beyond 5000ms.
+        // Each call within the same ms increments by 1, so we need >5000 rapid calls.
+        $this->expectException(IdOverflowException::class);
+        $this->expectExceptionMessage('Monotonic timestamp drift exceeds');
+
+        for ($i = 0; $i < 10_000; $i++) {
+            $gen->generate();
+        }
+    }
+
+    public function testMonotonicDriftAllowsModerateRate(): void
+    {
+        // A few hundred rapid calls should stay well within the 5000ms drift limit
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
+
+        for ($i = 0; $i < 200; $i++) {
+            $id = $gen->generate();
+        }
+
+        $this->assertTrue(HybridIdGenerator::isValid($id));
+    }
+
     // -------------------------------------------------------------------------
     // Validation (static)
     // -------------------------------------------------------------------------

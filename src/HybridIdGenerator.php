@@ -47,6 +47,13 @@ final class HybridIdGenerator implements IdGenerator
     private readonly ?string $blindSecret;
     private int $lastTimestamp = 0;
 
+    /**
+     * Maximum allowed drift (in ms) between the monotonic counter and wall-clock time.
+     * When exceeded, generation throws IdOverflowException to prevent unbounded
+     * future-dated timestamps.
+     */
+    private const int MAX_DRIFT_MS = 5000;
+
     public function __construct(
         Profile|string $profile = Profile::Standard,
         ?string $node = null,
@@ -178,6 +185,11 @@ final class HybridIdGenerator implements IdGenerator
 
     /**
      * Generate an ID using this instance's configured profile.
+     *
+     * @note NOT thread-safe. Each thread/coroutine (Swoole, ReactPHP, Laravel Octane)
+     *       must use its own HybridIdGenerator instance to avoid timestamp collisions.
+     *
+     * @throws IdOverflowException If monotonic drift exceeds MAX_DRIFT_MS (sustained high throughput)
      */
     public function generate(?string $prefix = null): string
     {
@@ -637,12 +649,20 @@ final class HybridIdGenerator implements IdGenerator
 
         // Monotonic guard: if clock drifts backward or same ms, increment to guarantee
         // strict ordering and eliminate intra-millisecond collision on the timestamp portion.
-        // Note: this does not cap forward drift. If the system clock jumps ahead and then
-        // corrects, the guard holds the inflated timestamp until wall-clock time catches up.
-        // This preserves ordering guarantees at the cost of timestamps appearing ahead of
-        // real time during the catch-up window.
         if ($now <= $this->lastTimestamp) {
             $now = $this->lastTimestamp + 1;
+
+            // Cap forward drift to prevent unbounded future-dated timestamps under
+            // sustained high throughput.
+            $realNow = (int) (microtime(true) * 1000);
+            if ($now - $realNow > self::MAX_DRIFT_MS) {
+                throw new IdOverflowException(
+                    sprintf(
+                        'Monotonic timestamp drift exceeds %dms. Reduce generation rate or use multiple instances.',
+                        self::MAX_DRIFT_MS,
+                    ),
+                );
+            }
         }
 
         $random = self::randomBase62($config['random']);
