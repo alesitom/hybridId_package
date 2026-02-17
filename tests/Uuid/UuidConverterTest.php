@@ -400,17 +400,36 @@ final class UuidConverterTest extends TestCase
         UuidConverter::fromUUIDv8($uuid);
     }
 
-    public function testPrefixedIdConvertedCorrectly(): void
+    public function testToUUIDv8RejectsPrefixedId(): void
     {
         $gen = new HybridIdGenerator(requireExplicitNode: false);
         $id = $gen->generate('usr');
 
-        // toUUIDv8 should parse the prefixed ID and convert the body
-        $uuid = UuidConverter::toUUIDv8($id);
-        $this->assertMatchesRegularExpression(self::UUID_PATTERN, $uuid);
+        $this->expectException(InvalidIdException::class);
+        $this->expectExceptionMessage('does not accept prefixed IDs');
 
-        // Round-trip recovers the body (unprefixed)
-        $recovered = UuidConverter::fromUUIDv8($uuid);
-        $this->assertSame(HybridIdGenerator::parse($id)['body'], $recovered);
+        UuidConverter::toUUIDv8($id);
+    }
+
+    public function testToUUIDv7RejectsPrefixedId(): void
+    {
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
+        $id = $gen->generate('ord');
+
+        $this->expectException(InvalidIdException::class);
+        $this->expectExceptionMessage('does not accept prefixed IDs');
+
+        UuidConverter::toUUIDv7($id);
+    }
+
+    public function testToUUIDv4RejectsPrefixedId(): void
+    {
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
+        $id = $gen->generate('txn');
+
+        $this->expectException(InvalidIdException::class);
+        $this->expectExceptionMessage('does not accept prefixed IDs');
+
+        UuidConverter::toUUIDv4($id);
     }
 }

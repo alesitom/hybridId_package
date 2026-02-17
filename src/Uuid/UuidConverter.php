@@ -9,6 +9,12 @@ use HybridId\Exception\InvalidProfileException;
 use HybridId\HybridIdGenerator;
 use HybridId\Profile;
 
+/**
+ * @warning Prefixes are NOT preserved through UUID conversion.
+ *          Methods toUUIDv8/v7/v4 reject prefixed IDs to prevent silent
+ *          prefix loss that could lead to type confusion. Strip the prefix
+ *          explicitly before converting and track it separately.
+ */
 final class UuidConverter
 {
     private function __construct() {}
@@ -19,6 +25,8 @@ final class UuidConverter
 
     public static function toUUIDv8(string $hybridId): string
     {
+        self::rejectPrefixed($hybridId, 'toUUIDv8');
+
         $parsed = HybridIdGenerator::parse($hybridId);
         if (!$parsed['valid']) {
             throw new InvalidIdException('Invalid HybridId: cannot convert to UUIDv8');
@@ -95,6 +103,8 @@ final class UuidConverter
 
     public static function toUUIDv7(string $hybridId): string
     {
+        self::rejectPrefixed($hybridId, 'toUUIDv7');
+
         $parsed = HybridIdGenerator::parse($hybridId);
         if (!$parsed['valid']) {
             throw new InvalidIdException('Invalid HybridId: cannot convert to UUIDv7');
@@ -152,6 +162,8 @@ final class UuidConverter
 
     public static function toUUIDv4(string $hybridId): string
     {
+        self::rejectPrefixed($hybridId, 'toUUIDv4');
+
         $parsed = HybridIdGenerator::parse($hybridId);
         if (!$parsed['valid']) {
             throw new InvalidIdException('Invalid HybridId: cannot convert to UUIDv4');
@@ -264,6 +276,19 @@ final class UuidConverter
     private static function stripHyphens(string $uuid): string
     {
         return strtolower(str_replace('-', '', $uuid));
+    }
+
+    private static function rejectPrefixed(string $hybridId, string $method): void
+    {
+        if (HybridIdGenerator::extractPrefix($hybridId) !== null) {
+            throw new InvalidIdException(
+                sprintf(
+                    '%s() does not accept prefixed IDs — prefixes are lost during UUID conversion. '
+                    . 'Strip the prefix first with HybridIdGenerator::extractPrefix() and track it separately.',
+                    $method,
+                ),
+            );
+        }
     }
 
     private static function safeHexdec(string $hex): int
