@@ -845,7 +845,7 @@ final class HybridIdGenerator implements IdGenerator
     /**
      * Encode an integer to base62 string with fixed length.
      *
-     * @internal Public for UuidConverter access. Stable API — safe to use.
+     * @api Stable — public for UuidConverter and external use.
      *
      * @throws \InvalidArgumentException If length < 1
      * @throws IdOverflowException If value is negative or exceeds length capacity
@@ -886,7 +886,7 @@ final class HybridIdGenerator implements IdGenerator
     /**
      * Decode a base62 string to integer.
      *
-     * @internal Public for UuidConverter access. Stable API — safe to use.
+     * @api Stable — public for UuidConverter and external use.
      *
      * @throws InvalidIdException If string is empty or contains invalid characters
      * @throws IdOverflowException If value exceeds 64-bit integer range
