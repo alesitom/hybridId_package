@@ -592,6 +592,128 @@ $gen = HybridIdGenerator::fromEnv();
 ./vendor/bin/hybrid-id generate --blind -p compact -n 5
 ```
 
+## UUID Interoperability
+
+HybridId can be converted to and from RFC 9562-compliant UUIDs for interoperability with systems that require standard UUID formats. Three conversion modes are available with different tradeoffs.
+
+```php
+use HybridId\Uuid\UuidConverter;
+```
+
+### UUIDv8 (lossless round-trip)
+
+UUIDv8 provides lossless conversion for compact and standard profiles. The profile type is encoded in the UUID, allowing perfect reconstruction of the original HybridId.
+
+```php
+$gen = new HybridIdGenerator(node: 'A1');
+$id = $gen->standard();  // 0VBFDQz4A1Rtntu09sbf
+
+$uuid = UuidConverter::toUUIDv8($id);
+// 017710961-13c4-8004-8f2c-9db3c6f44e44
+
+$restored = UuidConverter::fromUUIDv8($uuid);
+// 0VBFDQz4A1Rtntu09sbf (identical to original)
+```
+
+**When to use:** API responses, database foreign keys, systems that require UUIDs but you need to preserve full HybridId data.
+
+**Limitations:**
+- Only compact and standard profiles supported (extended throws `InvalidProfileException`)
+- Prefixed IDs are rejected — strip prefix before conversion, track separately
+
+### UUIDv7 (timestamp-preserving)
+
+UUIDv7 preserves the millisecond timestamp and node, making it chronologically sortable and RFC 9562 §5.7 compliant. Requires a profile hint when decoding.
+
+```php
+$gen = new HybridIdGenerator(node: 'A1');
+$id = $gen->standard();  // 0VBFDQz4A1Rtntu09sbf
+
+$uuid = UuidConverter::toUUIDv7($id);
+// 017710961-13c4-7004-8f2c-9db3c6f44e44
+
+// Decoding requires profile hint (defaults to 'standard')
+$restored = UuidConverter::fromUUIDv7($uuid, 'standard');
+// 0VBFDQz4A1Rtntu09sbf
+
+// Profile can be enum or string
+use HybridId\Profile;
+$restored = UuidConverter::fromUUIDv7($uuid, Profile::Standard);
+```
+
+**When to use:** Time-series data, audit logs, when sorting by creation time matters and you need UUID compatibility.
+
+**Limitations:**
+- Only compact and standard profiles supported
+- Profile must be known at decode time (no auto-detection)
+- Prefixed IDs are rejected
+
+### UUIDv4-format (lossy, NOT a true UUIDv4)
+
+Encodes HybridId data into a UUID with v4 structure (version=4, variant=10xx). The output is **NOT** a true RFC 9562 UUIDv4 — it does not contain 122 random bits. Conversion is lossy in both directions.
+
+```php
+$gen = new HybridIdGenerator(node: 'A1');
+$id = $gen->standard();  // 0VBFDQz4A1Rtntu09sbf
+
+$uuid = UuidConverter::toUUIDv4Format($id);
+// 017710961-13c4-4004-8f2c-9db3c6f44e44
+
+// Lossy decode: requires timestamp + node externally
+$restored = UuidConverter::fromUUIDv4Format(
+    $uuid,
+    profile: 'standard',
+    timestampMs: 1771109611324,
+    node: 'A1',
+);
+// 0VBFDQz4A1Rtntu09sbf
+
+// Without timestamp+node: uses current time and extracts node from UUID
+$restored = UuidConverter::fromUUIDv4Format($uuid, 'standard');
+// Random timestamp, possibly different node
+```
+
+**Warning:** Do NOT use `toUUIDv4Format()` output where a true UUIDv4 is expected (RFC 9562 §5.4). The output is deterministic, not cryptographically random. For standards-compliant conversions, use `toUUIDv8()` or `toUUIDv7()`.
+
+**When to use:** Legacy systems that only accept v4-format UUIDs and you cannot change the schema.
+
+**Limitations:**
+- Only compact and standard profiles supported
+- Prefixed IDs are rejected
+- Timestamp and node are lost unless stored separately
+- Output is NOT a true UUIDv4 per RFC 9562
+
+### Prefix handling
+
+All conversion methods reject prefixed IDs to prevent silent data loss. Strip the prefix first and track it separately:
+
+```php
+$gen = new HybridIdGenerator(node: 'A1');
+$id = $gen->generate('usr');  // usr_0VBFDQz4A1Rtntu09sbf
+
+// This throws InvalidIdException
+// UuidConverter::toUUIDv8($id);
+
+// Correct: extract prefix first
+$prefix = HybridIdGenerator::extractPrefix($id);  // "usr"
+$body = substr($id, strlen($prefix) + 1);         // 0VBFDQz4A1Rtntu09sbf
+
+$uuid = UuidConverter::toUUIDv8($body);
+// Store $prefix separately in database column or metadata
+```
+
+### Round-trip compatibility matrix
+
+| Method | Compact | Standard | Extended | Lossless | Notes |
+|--------|---------|----------|----------|----------|-------|
+| UUIDv8 | Yes | Yes | No | Yes | Profile auto-detected |
+| UUIDv7 | Yes | Yes | No | No | Needs profile hint |
+| v4-format | Yes | Yes | No | No | Needs timestamp + node |
+
+### Blind mode compatibility
+
+UUID conversion is not meaningful for blind mode IDs. The timestamp and node portions are HMAC-hashed, so the resulting UUID contains opaque values that don't preserve chronological ordering or original metadata. If you need UUID interoperability, do not enable blind mode.
+
 ## Clock Drift Protection
 
 Each generator instance maintains a monotonic guard that ensures timestamps never go backward and strictly increment even within the same millisecond. If the system clock moves backward (NTP adjustment), or multiple IDs are generated in the same millisecond, the timestamp increments by 1ms to guarantee strict chronological ordering.
