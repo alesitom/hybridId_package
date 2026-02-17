@@ -232,6 +232,33 @@ final class HybridIdGeneratorTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
+    // High-frequency uniqueness (#152)
+    // -------------------------------------------------------------------------
+
+    public function testHighFrequencyGenerationMaintainsUniqueness(): void
+    {
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
+        $count = 1000;
+        $ids = [];
+
+        for ($i = 0; $i < $count; $i++) {
+            $ids[] = $gen->generate();
+        }
+
+        // All IDs must be unique
+        $this->assertCount($count, array_unique($ids));
+
+        // All IDs must be strictly monotonically ordered
+        for ($i = 1; $i < $count; $i++) {
+            $this->assertSame(
+                -1,
+                HybridIdGenerator::compare($ids[$i - 1], $ids[$i]),
+                "ID at position {$i} must be greater than previous",
+            );
+        }
+    }
+
+    // -------------------------------------------------------------------------
     // Validation (static)
     // -------------------------------------------------------------------------
 
