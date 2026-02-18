@@ -4,6 +4,29 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [4.2.0] - 2026-02-18
+
+### Added
+- `Profile::bodyLength()` and `Profile::config()` convenience methods on the enum — reduces boilerplate when working with profiles directly (#178, #185)
+- `MockHybridIdGenerator::withCallback(\Closure $callback)` factory method for dynamic ID generation in tests — no need to predict call count or order (#184)
+- Performance regression tests for `generate()`, `generateBatch()`, and `encodeBase62()`/`decodeBase62()` round-trips (#177)
+
+### Changed
+- Refactored UUID builder methods in `UuidConverter` — extracted `parseForConversion()`, `decodeComponents()`, and `buildTimestampPreservingUuid()` to eliminate duplication between `toUUIDv8/v7/v4Format` (#175)
+- `Profile::bodyLength()` delegates to `profileConfig()` for single source of truth (#197)
+- `MockHybridIdGenerator::withCallback()` uses clean constructor pattern instead of sentinel-based post-construction mutation (#192)
+
+### Fixed
+- `extractDateTime()` — replaced `assert()` with `if/throw` guard; `assert()` is stripped when `zend.assertions=-1` (common production setting), causing a confusing `TypeError` instead of a library-domain exception (#191)
+- `MockHybridIdGenerator` callback mode now enforces prefix-mismatch guard, consistent with sequential mode (#193)
+- Replaced unreachable code in `extractDateTime()` with defensive guard (#176)
+
+### Documentation
+- Documented `blindSecret` constructor parameter and `HYBRID_ID_BLIND_SECRET` env var in blind-mode.md, api-reference.md, and README (#189)
+- Fixed PHPDoc return shape for `Profile::config()` — added missing `ts` key (#194)
+- Added `@param` shape to `decodeComponents()` in `UuidConverter` (#195)
+- Added `@param int<1,9>` constraint to `buildTimestampPreservingUuid()` (#196)
+
 ## [4.1.2] - 2026-02-17
 
 ### Fixed
@@ -251,6 +274,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - Configurable entropy profiles
 - Time-sortable IDs with millisecond precision
 
+[4.2.0]: https://github.com/alesitom/hybrid-id/compare/v4.1.2...v4.2.0
 [4.1.2]: https://github.com/alesitom/hybrid-id/compare/v4.1.1...v4.1.2
 [4.1.1]: https://github.com/alesitom/hybrid-id/compare/v4.1.0...v4.1.1
 [4.1.0]: https://github.com/alesitom/hybrid-id/compare/v4.0.0...v4.1.0

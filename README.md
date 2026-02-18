@@ -82,7 +82,7 @@ $gen = new HybridIdGenerator(profile: 'extended', node: 'A1');
 // Compact — no node needed
 $gen = new HybridIdGenerator(profile: 'compact');
 
-// From environment variables (HYBRID_ID_PROFILE, HYBRID_ID_NODE, HYBRID_ID_BLIND)
+// From environment variables (HYBRID_ID_PROFILE, HYBRID_ID_NODE, HYBRID_ID_BLIND, HYBRID_ID_BLIND_SECRET)
 $gen = HybridIdGenerator::fromEnv();
 ```
 
