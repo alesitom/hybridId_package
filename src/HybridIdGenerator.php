@@ -556,14 +556,9 @@ final class HybridIdGenerator implements IdGenerator
             sprintf('%d %06d', $seconds, $microseconds),
         );
 
-        // @codeCoverageIgnoreStart — unreachable: extractTimestamp() validates the ID
-        // and any valid millisecond timestamp produces a valid DateTime.
-        if ($dt === false) {
-            throw new \RuntimeException(
-                sprintf('Failed to create DateTime from HybridId (timestamp: %d ms)', $timestampMs),
-            );
-        }
-        // @codeCoverageIgnoreEnd
+        // Unreachable: extractTimestamp() validates the ID and any valid
+        // millisecond timestamp produces a valid DateTime.
+        assert($dt instanceof \DateTimeImmutable);
 
         return $dt;
     }
