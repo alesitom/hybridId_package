@@ -6,7 +6,6 @@ namespace HybridId\Tests;
 
 use HybridId\Exception\IdOverflowException;
 use HybridId\Exception\InvalidIdException;
-use HybridId\Exception\InvalidPrefixException;
 use HybridId\Exception\InvalidProfileException;
 use HybridId\Exception\NodeRequiredException;
 use HybridId\HybridIdGenerator;
@@ -1723,8 +1722,8 @@ final class HybridIdGeneratorTest extends TestCase
         $max = HybridIdGenerator::maxForTimestamp($after);
 
         foreach ($ids as $id) {
-            $this->assertGreaterThanOrEqual(0, strcmp($id, $min), "ID should be >= min boundary");
-            $this->assertLessThanOrEqual(0, strcmp($id, $max), "ID should be <= max boundary");
+            $this->assertGreaterThanOrEqual(0, strcmp($id, $min), 'ID should be >= min boundary');
+            $this->assertLessThanOrEqual(0, strcmp($id, $max), 'ID should be <= max boundary');
         }
     }
 

@@ -270,6 +270,10 @@ final class UuidConverter
             );
         }
 
+        assert(is_string($parsed['profile']));
+        assert(is_int($parsed['timestamp']));
+        assert(is_string($parsed['random']));
+
         return $parsed;
     }
 

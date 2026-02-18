@@ -18,6 +18,9 @@ final class Application
         $this->output = $output ?? new ConsoleOutput();
     }
 
+    /**
+     * @param list<string> $argv
+     */
     public function run(array $argv): int
     {
         $command = $argv[1] ?? 'help';
@@ -35,6 +38,9 @@ final class Application
     // Commands
     // -------------------------------------------------------------------------
 
+    /**
+     * @param list<string> $args
+     */
     private function commandGenerate(array $args): int
     {
         $profile = 'standard';
@@ -84,10 +90,11 @@ final class Application
                     $blind = true;
                     break;
                 default:
+                    $arg = (string) $args[$i];
                     $this->output->error(
-                        str_starts_with($args[$i], '-')
-                            ? 'Unknown option: ' . self::sanitize($args[$i])
-                            : 'Unexpected argument: ' . self::sanitize($args[$i]),
+                        str_starts_with($arg, '-')
+                            ? 'Unknown option: ' . self::sanitize($arg)
+                            : 'Unexpected argument: ' . self::sanitize($arg),
                     );
                     return 1;
             }
@@ -121,6 +128,9 @@ final class Application
         return 0;
     }
 
+    /**
+     * @param list<string> $args
+     */
     private function commandInspect(array $args): int
     {
         $id = $args[0] ?? null;
@@ -160,7 +170,7 @@ final class Application
         }
         $this->output->writeln("  Random:     {$random}");
         $this->output->writeln("  Entropy:    {$entropy} bits");
-        $this->output->writeln("  Valid:      yes");
+        $this->output->writeln('  Valid:      yes');
         $this->output->writeln('');
 
         return 0;
@@ -240,7 +250,7 @@ final class Application
 
     private static function sanitize(string $input): string
     {
-        $cleaned = preg_replace('/[^\x20-\x7e]/', '', $input);
+        $cleaned = (string) preg_replace('/[^\x20-\x7e]/', '', $input);
 
         if (strlen($cleaned) > self::MAX_INPUT_LENGTH) {
             return substr($cleaned, 0, self::MAX_INPUT_LENGTH);
