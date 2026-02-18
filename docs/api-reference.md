@@ -33,6 +33,25 @@ $ids = $gen->generateBatch(100, 'evt');
 
 Large batches advance the monotonic counter proportionally (e.g. 5,000 IDs = ~5s drift). Throws `IdOverflowException` if drift exceeds `MAX_DRIFT_MS` (5,000ms).
 
+### `fromEnv(?ProfileRegistryInterface $registry = null): self` (static)
+
+Construct a generator from environment variables. Useful for twelve-factor app configuration.
+
+```php
+$gen = HybridIdGenerator::fromEnv();
+```
+
+| Variable | Default | Description |
+|---|---|---|
+| `HYBRID_ID_PROFILE` | `standard` | Profile name: `compact`, `standard`, or `extended` (or any registered custom profile). |
+| `HYBRID_ID_NODE` | `null` | Two-character base62 node identifier. Required when profile uses a node field and `HYBRID_ID_REQUIRE_NODE` is not `0`. |
+| `HYBRID_ID_REQUIRE_NODE` | `1` (enabled) | Set to `0` to disable the node requirement guard. Has no effect on `compact` profile. |
+| `HYBRID_ID_BLIND` | `0` (disabled) | Set to `1` or `true` to enable blind mode. |
+| `HYBRID_ID_BLIND_SECRET` | `null` | Base64-encoded persistent HMAC secret. Decoded and passed as `blindSecret`. See [Blind Mode](blind-mode.md#persistent-secrets). |
+| `HYBRID_ID_MAX_LENGTH` | `null` | Maximum allowed ID length (positive integer). Throws `IdOverflowException` when exceeded. |
+
+Variables that are not set or are empty strings are treated as absent (the constructor default is used). Throws `\InvalidArgumentException` for malformed values.
+
 ## Validation
 
 ### `validate(string $id, ?string $expectedPrefix = null): bool` (instance)

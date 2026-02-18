@@ -25,7 +25,7 @@ $gen = HybridIdGenerator::fromEnv();
 
 ## How It Works
 
-The constructor generates a 32-byte secret via `random_bytes(32)`. During generation:
+When no `blindSecret` is provided, the constructor generates a 32-byte secret via `random_bytes(32)`. When `blindSecret` is provided, that value is used as the HMAC key instead. During generation:
 
 1. Pack monotonic timestamp + node into binary
 2. HMAC-SHA256 with the per-instance secret
@@ -38,6 +38,50 @@ Blind:   [HMAC(ts+node)  ][random]
 ```
 
 Same length, same alphabet. An observer cannot tell if an ID is blind or not.
+
+## Persistent Secrets
+
+By default, the secret is ephemeral — generated fresh via `random_bytes(32)` on each constructor call. IDs from two separate instances are blinded with different secrets and have no shared mapping.
+
+Pass a persistent secret via `blindSecret` to keep the mapping consistent across instances or restarts:
+
+```php
+// Generate a secret once and store it securely
+$secret = random_bytes(32);
+
+$gen = new HybridIdGenerator(node: 'A1', blind: true, blindSecret: $secret);
+```
+
+The `blindSecret` parameter accepts a raw binary string (`?string`). The value is used directly as the HMAC-SHA256 key.
+
+### Via environment variable
+
+`fromEnv()` reads `HYBRID_ID_BLIND_SECRET` as a base64-encoded secret:
+
+```bash
+# Generate and encode a secret once
+php -r "echo base64_encode(random_bytes(32)) . PHP_EOL;"
+# Store the output in your .env or secrets manager
+```
+
+```ini
+HYBRID_ID_BLIND=1
+HYBRID_ID_BLIND_SECRET=base64encodedvalue...
+```
+
+```php
+// Picks up HYBRID_ID_BLIND and HYBRID_ID_BLIND_SECRET automatically
+$gen = HybridIdGenerator::fromEnv();
+```
+
+`fromEnv()` throws `\InvalidArgumentException` if `HYBRID_ID_BLIND_SECRET` is set but is not valid base64.
+
+### Security considerations
+
+- Store the secret with the same care as a signing key — treat it as a credential.
+- There is no built-in key rotation. Rotating the secret changes the blinding output for all future IDs but does not re-blind existing ones.
+- Losing the secret does not expose historical IDs; it only means you can no longer produce the same blinded output for a given input.
+- A persistent secret does not add cryptographic authentication. Blind mode is a privacy feature, not a MAC scheme.
 
 ## What Works
 
@@ -53,7 +97,7 @@ Same length, same alphabet. An observer cannot tell if an ID is blind or not.
 - `extractTimestamp()` returns HMAC-derived value, not real time
 - `minForTimestamp()`/`maxForTimestamp()` won't match blind IDs
 - `extractNode()` returns HMAC-derived characters
-- **Secret is ephemeral** — each instance gets a new secret, IDs from different instances have different mappings
+- **Secret is ephemeral by default** — each instance without a `blindSecret` gets a new secret; IDs from different instances have different mappings. Pass `blindSecret` or set `HYBRID_ID_BLIND_SECRET` to make the mapping persistent.
 
 ## Node Handling
 
