@@ -17,7 +17,7 @@ final class MockHybridIdGenerator implements IdGenerator
     /**
      * @param list<string> $ids Sequence of IDs to return from generate()
      * @param int $bodyLength Body length to report (default: 20, standard profile)
-     * @param \Closure|null $callback Internal — use withCallback() factory instead
+     * @param (\Closure(?string): string)|null $callback Internal — use withCallback() factory instead
      */
     public function __construct(
         array $ids = [],
@@ -57,7 +57,7 @@ final class MockHybridIdGenerator implements IdGenerator
     public function generate(?string $prefix = null): string
     {
         $id = $this->callback !== null
-            ? ($this->callback)($prefix)
+            ? (string) ($this->callback)($prefix)
             : $this->nextSequentialId();
 
         if ($prefix !== null && !str_starts_with($id, $prefix . '_')) {

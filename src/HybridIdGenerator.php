@@ -222,7 +222,8 @@ final class HybridIdGenerator implements IdGenerator
             $value = getenv($name);
         }
         if ($value === false) {
-            $value = $_ENV[$name] ?? $_SERVER[$name] ?? false;
+            $raw = $_ENV[$name] ?? $_SERVER[$name] ?? null;
+            $value = is_string($raw) ? $raw : false;
         }
 
         return ($value !== false && $value !== '') ? $value : null;
@@ -578,6 +579,7 @@ final class HybridIdGenerator implements IdGenerator
         self::assertValid($id);
 
         $profile = self::detectProfile($id);
+        assert($profile !== null);
         $config = self::profileConfig($profile);
 
         if ($config['node'] === 0) {
@@ -704,6 +706,7 @@ final class HybridIdGenerator implements IdGenerator
             . 'Note: this method mutates the global registry only, not injected registries.',
             E_USER_DEPRECATED,
         );
+        // @phpstan-ignore argument.type (runtime validation in register() enforces int<6, 128>)
         self::defaultRegistry()->register($name, $random);
     }
 
@@ -794,6 +797,10 @@ final class HybridIdGenerator implements IdGenerator
     {
         $config = $profile === $this->profile ? $this->profileConfig : $this->registry->get($profile);
 
+        if ($config === null) {
+            throw new \InvalidArgumentException(sprintf('Unknown profile "%s"', $profile));
+        }
+
         $now = (int) (microtime(true) * 1000);
 
         // Monotonic guard: if clock drifts backward or same ms, increment to guarantee
@@ -821,6 +828,7 @@ final class HybridIdGenerator implements IdGenerator
         // relative generation order (monotonic input → deterministic HMAC ordering).
         if ($this->blind) {
             $hmacInput = pack('J', $now) . ($config['node'] > 0 ? $this->node : '');
+            assert($this->blindSecret !== null);
             $hmacBytes = hash_hmac('sha384', $hmacInput, $this->blindSecret, true);
             $opaqueLen = $config['ts'] + $config['node'];
             $opaquePrefix = '';
@@ -1039,6 +1047,9 @@ final class HybridIdGenerator implements IdGenerator
      */
     private static function secureRandomBytes(int $length): string
     {
+        if ($length < 1) {
+            throw new \InvalidArgumentException('Length must be at least 1');
+        }
         try {
             return random_bytes($length);
         } catch (\Random\RandomException $e) {

@@ -6,6 +6,8 @@
 [![PHP Requirement](https://img.shields.io/packagist/php-v/alesitom/hybrid-id.svg?style=flat-square)](https://packagist.org/packages/alesitom/hybrid-id)
 [![License](https://img.shields.io/packagist/l/alesitom/hybrid-id.svg?style=flat-square)](https://github.com/alesitom/hybridId_package/blob/main/LICENSE)
 [![Tests](https://img.shields.io/github/actions/workflow/status/alesitom/hybridId_package/ci.yml?style=flat-square&label=tests)](https://github.com/alesitom/hybridId_package/actions)
+[![Coverage](https://img.shields.io/codecov/c/github/alesitom/hybridId_package?style=flat-square)](https://codecov.io/gh/alesitom/hybridId_package)
+[![PHPStan](https://img.shields.io/badge/PHPStan-level%20max-blue?style=flat-square)](https://phpstan.org/)
 
 A space-efficient alternative to UUID with configurable entropy profiles, Stripe-style prefixes, and an instance-based API. Generate chronologically sortable, URL-safe identifiers 33-56% smaller than canonical UUIDs — with zero dependencies.
 
