@@ -63,6 +63,45 @@ final class ProfileTest extends TestCase
         $this->assertSame($fromEnum->bodyLength(), $fromString->bodyLength());
     }
 
+    public function testBodyLengthReturnsCorrectValues(): void
+    {
+        $this->assertSame(16, Profile::Compact->bodyLength());
+        $this->assertSame(20, Profile::Standard->bodyLength());
+        $this->assertSame(24, Profile::Extended->bodyLength());
+    }
+
+    public function testBodyLengthMatchesGeneratorBodyLength(): void
+    {
+        $this->assertSame(
+            (new HybridIdGenerator(profile: Profile::Compact))->bodyLength(),
+            Profile::Compact->bodyLength(),
+        );
+        $this->assertSame(
+            (new HybridIdGenerator(profile: Profile::Standard, node: 'T1'))->bodyLength(),
+            Profile::Standard->bodyLength(),
+        );
+        $this->assertSame(
+            (new HybridIdGenerator(profile: Profile::Extended, node: 'T1'))->bodyLength(),
+            Profile::Extended->bodyLength(),
+        );
+    }
+
+    public function testConfigReturnsProfileConfigArray(): void
+    {
+        foreach (Profile::cases() as $profile) {
+            $config = $profile->config();
+
+            $this->assertSame(
+                HybridIdGenerator::profileConfig($profile),
+                $config,
+            );
+            $this->assertArrayHasKey('length', $config);
+            $this->assertArrayHasKey('node', $config);
+            $this->assertArrayHasKey('random', $config);
+            $this->assertSame($profile->bodyLength(), $config['length']);
+        }
+    }
+
     public function testStaticMethodsAcceptEnum(): void
     {
         $ts = (int) (microtime(true) * 1000);
