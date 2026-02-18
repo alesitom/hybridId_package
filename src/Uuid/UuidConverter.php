@@ -36,12 +36,7 @@ final class UuidConverter
      */
     public static function toUUIDv8(string $hybridId): string
     {
-        self::rejectPrefixed($hybridId, 'toUUIDv8');
-
-        $parsed = HybridIdGenerator::parse($hybridId);
-        if (!$parsed['valid']) {
-            throw new InvalidIdException('Invalid HybridId: cannot convert to UUIDv8');
-        }
+        $parsed = self::parseForConversion($hybridId, 'toUUIDv8');
 
         $profileIndex = match ($parsed['profile']) {
             'compact' => 0,
@@ -51,22 +46,18 @@ final class UuidConverter
             ),
         };
 
-        $timestamp = $parsed['timestamp'];
-        $nodeValue = $parsed['node'] !== null ? HybridIdGenerator::decodeBase62($parsed['node']) : 0;
-        $randomValue = HybridIdGenerator::decodeBase62($parsed['random']);
+        [$nodeValue, $randomValue] = self::decodeComponents($parsed);
 
         // custom_c: [2-bit profile index][60-bit random]
         $customC = ($profileIndex << 60) | ($randomValue & 0x0FFFFFFFFFFFFFFF);
 
-        // Build 32-char hex string
-        $hex = sprintf('%012x', $timestamp);                              // custom_a: 48 bits
-        $hex .= '8';                                                       // version: 1000
-        $hex .= sprintf('%03x', $nodeValue);                               // custom_b: 12 bits
+        $hex = sprintf('%012x', $parsed['timestamp']);
+        $hex .= '8';
+        $hex .= sprintf('%03x', $nodeValue);
 
         $variantAndHigh = (0b10 << 2) | (($customC >> 60) & 0x3);
-        $hex .= sprintf('%x', $variantAndHigh);                            // variant(2) + high(2)
-
-        $hex .= sprintf('%015x', $customC & 0x0FFFFFFFFFFFFFFF);           // low 60 bits
+        $hex .= sprintf('%x', $variantAndHigh);
+        $hex .= sprintf('%015x', $customC & 0x0FFFFFFFFFFFFFFF);
 
         return self::insertHyphens($hex);
     }
@@ -126,29 +117,7 @@ final class UuidConverter
      */
     public static function toUUIDv7(string $hybridId): string
     {
-        self::rejectPrefixed($hybridId, 'toUUIDv7');
-
-        $parsed = HybridIdGenerator::parse($hybridId);
-        if (!$parsed['valid']) {
-            throw new InvalidIdException('Invalid HybridId: cannot convert to UUIDv7');
-        }
-
-        self::assertSupportedProfile($parsed['profile'], 'toUUIDv7');
-
-        $timestamp = $parsed['timestamp'];
-        $nodeValue = $parsed['node'] !== null ? HybridIdGenerator::decodeBase62($parsed['node']) : 0;
-        $randomValue = HybridIdGenerator::decodeBase62($parsed['random']);
-
-        $hex = sprintf('%012x', $timestamp);
-        $hex .= '7';
-        $hex .= sprintf('%03x', $nodeValue);
-
-        $variantAndHigh = (0b10 << 2) | (($randomValue >> 58) & 0x3);
-        $hex .= sprintf('%x', $variantAndHigh);
-
-        $hex .= sprintf('%015x', $randomValue & 0x03FFFFFFFFFFFFFF);
-
-        return self::insertHyphens($hex);
+        return self::buildTimestampPreservingUuid($hybridId, 'toUUIDv7', 7);
     }
 
     /**
@@ -214,29 +183,7 @@ final class UuidConverter
      */
     public static function toUUIDv4Format(string $hybridId): string
     {
-        self::rejectPrefixed($hybridId, 'toUUIDv4Format');
-
-        $parsed = HybridIdGenerator::parse($hybridId);
-        if (!$parsed['valid']) {
-            throw new InvalidIdException('Invalid HybridId: cannot convert to UUIDv4 format');
-        }
-
-        self::assertSupportedProfile($parsed['profile'], 'toUUIDv4Format');
-
-        $timestamp = $parsed['timestamp'];
-        $nodeValue = $parsed['node'] !== null ? HybridIdGenerator::decodeBase62($parsed['node']) : 0;
-        $randomValue = HybridIdGenerator::decodeBase62($parsed['random']);
-
-        $hex = sprintf('%012x', $timestamp);
-        $hex .= '4';
-        $hex .= sprintf('%03x', $nodeValue);
-
-        $variantAndHigh = (0b10 << 2) | (($randomValue >> 58) & 0x3);
-        $hex .= sprintf('%x', $variantAndHigh);
-
-        $hex .= sprintf('%015x', $randomValue & 0x03FFFFFFFFFFFFFF);
-
-        return self::insertHyphens($hex);
+        return self::buildTimestampPreservingUuid($hybridId, 'toUUIDv4Format', 4);
     }
 
     /**
@@ -303,6 +250,63 @@ final class UuidConverter
     // -------------------------------------------------------------------------
     // Private helpers
     // -------------------------------------------------------------------------
+
+    /**
+     * Reject prefixed IDs, parse and validate a HybridId for UUID conversion.
+     *
+     * Returns the raw parsed array — callers must decode node/random AFTER
+     * profile validation to avoid overflow on unsupported profiles (e.g. extended).
+     *
+     * @return array{valid: bool, profile: string, timestamp: int, node: ?string, random: string, ...}
+     */
+    private static function parseForConversion(string $hybridId, string $method): array
+    {
+        self::rejectPrefixed($hybridId, $method);
+
+        $parsed = HybridIdGenerator::parse($hybridId);
+        if (!$parsed['valid']) {
+            throw new InvalidIdException(
+                sprintf('Invalid HybridId: cannot convert to %s', $method),
+            );
+        }
+
+        return $parsed;
+    }
+
+    /**
+     * Decode node and random base62 strings from a parsed HybridId.
+     *
+     * @return array{int, int} [nodeValue, randomValue]
+     */
+    private static function decodeComponents(array $parsed): array
+    {
+        return [
+            $parsed['node'] !== null ? HybridIdGenerator::decodeBase62($parsed['node']) : 0,
+            HybridIdGenerator::decodeBase62($parsed['random']),
+        ];
+    }
+
+    /**
+     * Build a timestamp-preserving UUID (v7 or v4-format) from a HybridId.
+     *
+     * v7 and v4-format share identical encoding logic — only the version digit differs.
+     */
+    private static function buildTimestampPreservingUuid(string $hybridId, string $method, int $version): string
+    {
+        $parsed = self::parseForConversion($hybridId, $method);
+        self::assertSupportedProfile($parsed['profile'], $method);
+        [$nodeValue, $randomValue] = self::decodeComponents($parsed);
+
+        $hex = sprintf('%012x', $parsed['timestamp']);
+        $hex .= (string) $version;
+        $hex .= sprintf('%03x', $nodeValue);
+
+        $variantAndHigh = (0b10 << 2) | (($randomValue >> 58) & 0x3);
+        $hex .= sprintf('%x', $variantAndHigh);
+        $hex .= sprintf('%015x', $randomValue & 0x03FFFFFFFFFFFFFF);
+
+        return self::insertHyphens($hex);
+    }
 
     private static function assertUuidFormat(string $uuid, int $expectedVersion): void
     {
