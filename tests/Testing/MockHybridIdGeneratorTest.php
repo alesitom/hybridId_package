@@ -219,4 +219,101 @@ final class MockHybridIdGeneratorTest extends TestCase
 
         new MockHybridIdGenerator([]);
     }
+
+    // -------------------------------------------------------------------------
+    // withCallback()
+    // -------------------------------------------------------------------------
+
+    public function testWithCallbackGeneratesViaCallback(): void
+    {
+        $mock = MockHybridIdGenerator::withCallback(
+            fn(?string $prefix): string => ($prefix !== null ? $prefix . '_' : '') . str_repeat('A', 20),
+        );
+
+        $this->assertSame(str_repeat('A', 20), $mock->generate());
+        $this->assertSame('usr_' . str_repeat('A', 20), $mock->generate('usr'));
+    }
+
+    public function testWithCallbackNeverExhausts(): void
+    {
+        $counter = 0;
+        $mock = MockHybridIdGenerator::withCallback(
+            function (?string $prefix) use (&$counter): string {
+                return 'id' . str_pad((string) ++$counter, 18, '0', STR_PAD_LEFT);
+            },
+        );
+
+        for ($i = 0; $i < 100; $i++) {
+            $mock->generate();
+        }
+
+        $this->assertSame(100, $counter);
+    }
+
+    public function testWithCallbackRemainingReturnsIntMax(): void
+    {
+        $mock = MockHybridIdGenerator::withCallback(fn() => str_repeat('A', 20));
+
+        $this->assertSame(PHP_INT_MAX, $mock->remaining());
+    }
+
+    public function testWithCallbackResetIsNoOp(): void
+    {
+        $counter = 0;
+        $mock = MockHybridIdGenerator::withCallback(
+            function (?string $prefix) use (&$counter): string {
+                return 'id' . str_pad((string) ++$counter, 18, '0', STR_PAD_LEFT);
+            },
+        );
+
+        $mock->generate();
+        $mock->generate();
+        $mock->reset();
+
+        // Counter is NOT reset — reset() is a no-op in callback mode
+        $this->assertSame('id000000000000000003', $mock->generate());
+    }
+
+    public function testWithCallbackBodyLength(): void
+    {
+        $mock = MockHybridIdGenerator::withCallback(
+            fn() => str_repeat('A', 24),
+            bodyLength: 24,
+        );
+
+        $this->assertSame(24, $mock->bodyLength());
+    }
+
+    public function testWithCallbackDefaultBodyLength(): void
+    {
+        $mock = MockHybridIdGenerator::withCallback(fn() => str_repeat('A', 20));
+
+        $this->assertSame(20, $mock->bodyLength());
+    }
+
+    public function testWithCallbackGenerateBatchWorks(): void
+    {
+        $counter = 0;
+        $mock = MockHybridIdGenerator::withCallback(
+            function (?string $prefix) use (&$counter): string {
+                $id = 'id' . str_pad((string) ++$counter, 18, '0', STR_PAD_LEFT);
+
+                return $prefix !== null ? $prefix . '_' . $id : $id;
+            },
+        );
+
+        $batch = $mock->generateBatch(3, 'usr');
+
+        $this->assertCount(3, $batch);
+        $this->assertSame('usr_id000000000000000001', $batch[0]);
+        $this->assertSame('usr_id000000000000000002', $batch[1]);
+        $this->assertSame('usr_id000000000000000003', $batch[2]);
+    }
+
+    public function testWithCallbackImplementsIdGenerator(): void
+    {
+        $mock = MockHybridIdGenerator::withCallback(fn() => str_repeat('A', 20));
+
+        $this->assertInstanceOf(IdGenerator::class, $mock);
+    }
 }

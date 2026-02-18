@@ -11,9 +11,10 @@ use HybridId\IdGenerator;
 final class MockHybridIdGenerator implements IdGenerator
 {
     /** @var list<string> */
-    private readonly array $ids;
+    private array $ids;
     private int $cursor = 0;
-    private readonly int $bodyLength;
+    private int $bodyLength;
+    private ?\Closure $callback = null;
 
     /**
      * @param list<string> $ids Sequence of IDs to return from generate()
@@ -30,7 +31,27 @@ final class MockHybridIdGenerator implements IdGenerator
     }
 
     /**
-     * Returns the next ID from the sequence.
+     * Create a mock that generates IDs dynamically via a callback.
+     *
+     * The callback receives the prefix (or null) and must return a full ID string.
+     * Unlike the sequential constructor, this mock never exhausts.
+     *
+     * @param \Closure(?string): string $callback
+     *
+     * @since 4.2.0
+     */
+    public static function withCallback(\Closure $callback, int $bodyLength = 20): self
+    {
+        $instance = new self(['_']);
+        $instance->ids = [];
+        $instance->callback = $callback;
+        $instance->bodyLength = $bodyLength;
+
+        return $instance;
+    }
+
+    /**
+     * Returns the next ID from the sequence, or invokes the callback.
      *
      * When $prefix is provided, the next ID must already include it
      * (e.g. "usr_abc..."). If it doesn't, an exception is thrown so
@@ -39,6 +60,10 @@ final class MockHybridIdGenerator implements IdGenerator
     #[\Override]
     public function generate(?string $prefix = null): string
     {
+        if ($this->callback !== null) {
+            return ($this->callback)($prefix);
+        }
+
         if ($this->cursor >= count($this->ids)) {
             throw new \OverflowException(
                 sprintf(
@@ -97,17 +122,29 @@ final class MockHybridIdGenerator implements IdGenerator
 
     /**
      * How many IDs remain before exhaustion.
+     *
+     * Returns PHP_INT_MAX in callback mode (never exhausts).
      */
     public function remaining(): int
     {
+        if ($this->callback !== null) {
+            return PHP_INT_MAX;
+        }
+
         return count($this->ids) - $this->cursor;
     }
 
     /**
      * Reset the cursor to the beginning of the sequence.
+     *
+     * No-op in callback mode.
      */
     public function reset(): void
     {
+        if ($this->callback !== null) {
+            return;
+        }
+
         $this->cursor = 0;
     }
 }
