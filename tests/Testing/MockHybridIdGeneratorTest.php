@@ -316,4 +316,48 @@ final class MockHybridIdGeneratorTest extends TestCase
 
         $this->assertInstanceOf(IdGenerator::class, $mock);
     }
+
+    public function testWithCallbackThrowsOnPrefixMismatch(): void
+    {
+        $mock = MockHybridIdGenerator::withCallback(
+            fn(?string $prefix): string => 'no_prefix_here_12345',
+        );
+
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('prefix "usr"');
+
+        $mock->generate('usr');
+    }
+
+    public function testWithCallbackExceptionPropagates(): void
+    {
+        $mock = MockHybridIdGenerator::withCallback(
+            function (?string $prefix): string {
+                throw new \RuntimeException('generation failed');
+            },
+        );
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('generation failed');
+
+        $mock->generate();
+    }
+
+    public function testWithCallbackBatchThrowsOnInvalidCount(): void
+    {
+        $mock = MockHybridIdGenerator::withCallback(fn() => str_repeat('A', 20));
+
+        $this->expectException(\InvalidArgumentException::class);
+
+        $mock->generateBatch(0);
+    }
+
+    public function testWithCallbackBatchThrowsOnExcessiveCount(): void
+    {
+        $mock = MockHybridIdGenerator::withCallback(fn() => str_repeat('A', 20));
+
+        $this->expectException(\InvalidArgumentException::class);
+
+        $mock->generateBatch(10_001);
+    }
 }

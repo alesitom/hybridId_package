@@ -21,11 +21,7 @@ enum Profile: string
      */
     public function bodyLength(): int
     {
-        return match ($this) {
-            self::Compact => 16,
-            self::Standard => 20,
-            self::Extended => 24,
-        };
+        return HybridIdGenerator::profileConfig($this)['length'];
     }
 
     /**
@@ -33,7 +29,7 @@ enum Profile: string
      *
      * Shortcut for HybridIdGenerator::profileConfig($this).
      *
-     * @return array{length: int, node: int, random: int}
+     * @return array{length: int, ts: int, node: int, random: int}
      *
      * @since 4.2.0
      */

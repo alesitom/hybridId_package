@@ -276,6 +276,7 @@ final class UuidConverter
     /**
      * Decode node and random base62 strings from a parsed HybridId.
      *
+     * @param array{node: ?string, random: string} $parsed
      * @return array{int, int} [nodeValue, randomValue]
      */
     private static function decodeComponents(array $parsed): array
@@ -290,6 +291,8 @@ final class UuidConverter
      * Build a timestamp-preserving UUID (v7 or v4-format) from a HybridId.
      *
      * v7 and v4-format share identical encoding logic — only the version digit differs.
+     *
+     * @param int<1,9> $version UUID version digit
      */
     private static function buildTimestampPreservingUuid(string $hybridId, string $method, int $version): string
     {

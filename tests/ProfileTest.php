@@ -96,6 +96,7 @@ final class ProfileTest extends TestCase
                 $config,
             );
             $this->assertArrayHasKey('length', $config);
+            $this->assertArrayHasKey('ts', $config);
             $this->assertArrayHasKey('node', $config);
             $this->assertArrayHasKey('random', $config);
             $this->assertSame($profile->bodyLength(), $config['length']);
