@@ -11,29 +11,31 @@ use HybridId\IdGenerator;
 final class MockHybridIdGenerator implements IdGenerator
 {
     /** @var list<string> */
-    private array $ids;
+    private readonly array $ids;
     private int $cursor = 0;
-    private int $bodyLength;
-    private ?\Closure $callback = null;
 
     /**
      * @param list<string> $ids Sequence of IDs to return from generate()
      * @param int $bodyLength Body length to report (default: 20, standard profile)
+     * @param \Closure|null $callback Internal — use withCallback() factory instead
      */
-    public function __construct(array $ids, int $bodyLength = 20)
-    {
-        if ($ids === []) {
+    public function __construct(
+        array $ids = [],
+        private readonly int $bodyLength = 20,
+        private readonly ?\Closure $callback = null,
+    ) {
+        if ($this->callback === null && $ids === []) {
             throw new \InvalidArgumentException('MockHybridIdGenerator requires at least one ID');
         }
 
         $this->ids = array_values($ids);
-        $this->bodyLength = $bodyLength;
     }
 
     /**
      * Create a mock that generates IDs dynamically via a callback.
      *
      * The callback receives the prefix (or null) and must return a full ID string.
+     * When a prefix is requested, the returned ID must start with "{$prefix}_".
      * Unlike the sequential constructor, this mock never exhausts.
      *
      * @param \Closure(?string): string $callback
@@ -42,47 +44,33 @@ final class MockHybridIdGenerator implements IdGenerator
      */
     public static function withCallback(\Closure $callback, int $bodyLength = 20): self
     {
-        $instance = new self(['_']);
-        $instance->ids = [];
-        $instance->callback = $callback;
-        $instance->bodyLength = $bodyLength;
-
-        return $instance;
+        return new self([], $bodyLength, $callback);
     }
 
     /**
      * Returns the next ID from the sequence, or invokes the callback.
      *
-     * When $prefix is provided, the next ID must already include it
-     * (e.g. "usr_abc..."). If it doesn't, an exception is thrown so
-     * the developer can fix their mock setup.
+     * When $prefix is provided, the returned ID must start with "{$prefix}_".
+     * This is enforced in both sequential and callback mode.
      */
     #[\Override]
     public function generate(?string $prefix = null): string
     {
-        if ($this->callback !== null) {
-            return ($this->callback)($prefix);
-        }
-
-        if ($this->cursor >= count($this->ids)) {
-            throw new \OverflowException(
-                sprintf(
-                    'MockHybridIdGenerator exhausted: all %d IDs have been consumed',
-                    count($this->ids),
-                ),
-            );
-        }
-
-        $id = $this->ids[$this->cursor++];
+        $id = $this->callback !== null
+            ? ($this->callback)($prefix)
+            : $this->nextSequentialId();
 
         if ($prefix !== null && !str_starts_with($id, $prefix . '_')) {
             throw new \LogicException(
                 sprintf(
-                    'MockHybridIdGenerator: generate() called with prefix "%s" but next ID "%s" '
-                    . 'does not start with "%s_". Include the prefix in your mock IDs.',
+                    'MockHybridIdGenerator: generate() called with prefix "%s" but ID "%s" '
+                    . 'does not start with "%s_". %s',
                     $prefix,
                     $id,
                     $prefix,
+                    $this->callback !== null
+                        ? 'Ensure your callback returns prefixed IDs when a prefix is requested.'
+                        : 'Include the prefix in your mock IDs.',
                 ),
             );
         }
@@ -146,5 +134,19 @@ final class MockHybridIdGenerator implements IdGenerator
         }
 
         $this->cursor = 0;
+    }
+
+    private function nextSequentialId(): string
+    {
+        if ($this->cursor >= count($this->ids)) {
+            throw new \OverflowException(
+                sprintf(
+                    'MockHybridIdGenerator exhausted: all %d IDs have been consumed',
+                    count($this->ids),
+                ),
+            );
+        }
+
+        return $this->ids[$this->cursor++];
     }
 }
