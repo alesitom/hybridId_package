@@ -28,7 +28,7 @@ $gen = HybridIdGenerator::fromEnv();
 When no `blindSecret` is provided, the constructor generates a 32-byte secret via `random_bytes(32)`. When `blindSecret` is provided, that value is used as the HMAC key instead. During generation:
 
 1. Pack monotonic timestamp + node into binary
-2. HMAC-SHA256 with the per-instance secret
+2. HMAC-SHA384 with the per-instance secret
 3. Derive base62 characters from the HMAC output (replacing timestamp+node portion)
 4. Append the random portion (unchanged)
 
@@ -52,7 +52,7 @@ $secret = random_bytes(32);
 $gen = new HybridIdGenerator(node: 'A1', blind: true, blindSecret: $secret);
 ```
 
-The `blindSecret` parameter accepts a raw binary string (`?string`). The value is used directly as the HMAC-SHA256 key.
+The `blindSecret` parameter accepts a raw binary string (`?string`). The value is used directly as the HMAC-SHA384 key.
 
 ### Via environment variable
 

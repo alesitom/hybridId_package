@@ -111,7 +111,7 @@ final class HybridIdGenerator implements IdGenerator
                 throw new InvalidIdException('Node must be exactly 2 base62 characters (0-9, A-Z, a-z)');
             }
             $this->node = $node;
-        } elseif ($blind) {
+        } elseif ($this->blind) {
             // Blind mode: node is only used as HMAC input, secret differentiates instances
             $this->node = self::autoDetectNode();
         } elseif ($requireExplicitNode && $this->profileConfig['node'] > 0) {

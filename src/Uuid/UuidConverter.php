@@ -130,6 +130,7 @@ final class UuidConverter
         self::assertUuidFormat($uuid, 7);
 
         $profileName = $profile instanceof Profile ? $profile->value : $profile;
+        self::assertSupportedProfile($profileName, 'fromUUIDv7');
         $hex = self::stripHyphens($uuid);
 
         $timestamp = self::safeHexdec(substr($hex, 0, 12));
@@ -210,6 +211,7 @@ final class UuidConverter
         self::assertUuidFormat($uuid, 4);
 
         $profileName = $profile instanceof Profile ? $profile->value : $profile;
+        self::assertSupportedProfile($profileName, 'fromUUIDv4Format');
         $hex = self::stripHyphens($uuid);
         $config = HybridIdGenerator::profileConfig($profileName);
 
