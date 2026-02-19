@@ -251,6 +251,16 @@ final class UuidConverterTest extends TestCase
         $this->assertSame($id, $recovered);
     }
 
+    public function testFromUUIDv7RejectsExtendedProfile(): void
+    {
+        $gen = new HybridIdGenerator(profile: 'standard', node: 'T1');
+        $uuid = UuidConverter::toUUIDv7($gen->generate());
+
+        $this->expectException(InvalidProfileException::class);
+
+        UuidConverter::fromUUIDv7($uuid, Profile::Extended);
+    }
+
     // =========================================================================
     // UUIDv4-format — lossy
     // =========================================================================
@@ -362,6 +372,16 @@ final class UuidConverterTest extends TestCase
         $this->expectExceptionMessage('maximum encodable');
 
         UuidConverter::fromUUIDv4Format($uuid, 'standard', 62 ** 8);
+    }
+
+    public function testFromUUIDv4FormatRejectsExtendedProfile(): void
+    {
+        $gen = new HybridIdGenerator(profile: 'standard', node: 'T1');
+        $uuid = UuidConverter::toUUIDv4Format($gen->generate());
+
+        $this->expectException(InvalidProfileException::class);
+
+        UuidConverter::fromUUIDv4Format($uuid, Profile::Extended);
     }
 
     // =========================================================================

@@ -122,6 +122,33 @@ final class BlindModeTest extends TestCase
         $this->assertSame(20, strlen($id));
     }
 
+    public function testBlindSecretAloneBypassesRequireExplicitNode(): void
+    {
+        // blindSecret without blind:true must imply blind mode
+        // and skip NodeRequiredException (requireExplicitNode defaults to true)
+        $gen = new HybridIdGenerator(blindSecret: random_bytes(32));
+
+        $this->assertTrue($gen->isBlind());
+        $this->assertSame(20, strlen($gen->generate()));
+    }
+
+    public function testBlindSecretAloneActivatesBlindMode(): void
+    {
+        $secret = random_bytes(32);
+        $gen = new HybridIdGenerator(blindSecret: $secret);
+
+        $this->assertTrue($gen->isBlind());
+        $this->assertTrue(HybridIdGenerator::isValid($gen->generate()));
+    }
+
+    public function testBlindSecretWithExplicitNodeWorks(): void
+    {
+        $gen = new HybridIdGenerator(node: 'A1', blindSecret: random_bytes(32));
+
+        $this->assertTrue($gen->isBlind());
+        $this->assertSame(20, strlen($gen->generate()));
+    }
+
     // -------------------------------------------------------------------------
     // Monotonic guard
     // -------------------------------------------------------------------------

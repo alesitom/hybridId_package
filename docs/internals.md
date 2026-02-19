@@ -69,13 +69,14 @@ Unlike ULID or TypeID, HybridId doesn't embed a version identifier in the ID. Re
 - Profile detection works by length (16/20/24 for built-in profiles)
 - Breaking format changes get a new major version, not a new byte
 
-## Blind Mode HMAC
+## Blind Mode HMAC (SHA-384)
 
 Input: `pack('J', timestamp) . node` (big-endian 64-bit int + 2-char node).
-Key: `random_bytes(32)` generated once per instance.
-Output: `hexdec(substr(hmac_hex, 0, 15)) % (62 ^ opaqueLen)` encoded to base62.
+Key: `random_bytes(32)` generated once per instance (or persistent via `blindSecret`).
+Algorithm: `hash_hmac('sha384', input, key, binary: true)`.
+Output: per-character derivation from 16-bit pairs of HMAC bytes, each `% 62`, for `opaqueLen` characters.
 
-The `% 62^n` introduces slight modulo bias, but this is acceptable — the HMAC output is for privacy (making timestamps unextractable), not for cryptographic key material.
+The per-character `% 62` on 16-bit values introduces ~0.003% modulo bias, which is acceptable — the HMAC output is for privacy (making timestamps unextractable), not for cryptographic key material.
 
 ## Prefix Design
 
