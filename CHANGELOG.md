@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [4.3.0] - 2026-02-19
+
+### Fixed
+- `blindSecret` without `blind: true` now correctly activates blind mode and bypasses `requireExplicitNode` — previously `new HybridIdGenerator(blindSecret: $secret)` threw `NodeRequiredException` (#203)
+- `UuidConverter::fromUUIDv7()` and `fromUUIDv4Format()` now reject `Profile::Extended` with `InvalidProfileException`, matching the `to*` methods — previously accepted silently with truncated output (#204)
+- Documentation references to HMAC-SHA256 corrected to HMAC-SHA384 in blind-mode.md and internals.md (#205)
+
 ## [4.2.0] - 2026-02-18
 
 ### Added
