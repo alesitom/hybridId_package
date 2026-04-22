@@ -6,6 +6,7 @@ namespace HybridId\Testing;
 
 use HybridId\HybridIdGenerator;
 use HybridId\IdGenerator;
+use HybridId\Exception\Messages;
 
 /** @since 4.0.0 */
 final class MockHybridIdGenerator implements IdGenerator
@@ -25,7 +26,7 @@ final class MockHybridIdGenerator implements IdGenerator
         private readonly ?\Closure $callback = null,
     ) {
         if ($this->callback === null && $ids === []) {
-            throw new \InvalidArgumentException('MockHybridIdGenerator requires at least one ID');
+            throw new \InvalidArgumentException(Messages::MOCK_EMPTY);
         }
 
         $this->ids = array_values($ids);
@@ -63,8 +64,7 @@ final class MockHybridIdGenerator implements IdGenerator
         if ($prefix !== null && !str_starts_with($id, $prefix . '_')) {
             throw new \LogicException(
                 sprintf(
-                    'MockHybridIdGenerator: generate() called with prefix "%s" but ID "%s" '
-                    . 'does not start with "%s_". %s',
+                    Messages::MOCK_PREFIX_MISMATCH,
                     $prefix,
                     $id,
                     $prefix,
@@ -83,7 +83,7 @@ final class MockHybridIdGenerator implements IdGenerator
     {
         if ($count < 1 || $count > 10_000) {
             throw new \InvalidArgumentException(
-                sprintf('Batch count must be between 1 and 10,000, got %d', $count),
+                sprintf(Messages::MOCK_BATCH_LIMIT, $count),
             );
         }
 
@@ -141,7 +141,7 @@ final class MockHybridIdGenerator implements IdGenerator
         if ($this->cursor >= count($this->ids)) {
             throw new \OverflowException(
                 sprintf(
-                    'MockHybridIdGenerator exhausted: all %d IDs have been consumed',
+                    Messages::MOCK_EXHAUSTED,
                     count($this->ids),
                 ),
             );

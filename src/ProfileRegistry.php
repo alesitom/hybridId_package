@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace HybridId;
 
 use HybridId\Exception\InvalidProfileException;
+use HybridId\Exception\Messages;
 
 /** @since 4.0.0 */
 final class ProfileRegistry implements ProfileRegistryInterface
@@ -48,17 +49,17 @@ final class ProfileRegistry implements ProfileRegistryInterface
     public function register(string $name, int $random, int $node = 2): void
     {
         if (!preg_match('/^[a-z][a-z0-9]*$/', $name)) {
-            throw new InvalidProfileException('Profile name must be lowercase alphanumeric, starting with a letter');
+            throw new InvalidProfileException(Messages::PROFILE_NAME_INVALID);
         }
 
         if ($this->get($name) !== null) {
             throw new InvalidProfileException(
-                sprintf('Profile "%s" already exists', $name),
+                sprintf(Messages::PROFILE_EXISTS, $name),
             );
         }
 
         if ($random < 6 || $random > 128) {
-            throw new InvalidProfileException('Random length must be between 6 and 128');
+            throw new InvalidProfileException(Messages::RANDOM_LENGTH_INVALID);
         }
 
         if ($node < 0 || $node > 10) {
@@ -70,7 +71,7 @@ final class ProfileRegistry implements ProfileRegistryInterface
         $existing = $this->getByLength($length);
         if ($existing !== null) {
             throw new InvalidProfileException(
-                sprintf('Length %d conflicts with existing profile "%s"', $length, $existing),
+                sprintf(Messages::LENGTH_CONFLICT, $length, $existing),
             );
         }
 

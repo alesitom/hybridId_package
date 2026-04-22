@@ -9,6 +9,7 @@ use HybridId\Exception\InvalidIdException;
 use HybridId\Exception\InvalidPrefixException;
 use HybridId\Exception\InvalidProfileException;
 use HybridId\Exception\NodeRequiredException;
+use HybridId\Exception\Messages;
 
 final class HybridIdGenerator implements IdGenerator
 {
@@ -77,12 +78,12 @@ final class HybridIdGenerator implements IdGenerator
         int $maxDriftMs = self::DEFAULT_MAX_DRIFT_MS,
     ) {
         if (PHP_INT_SIZE < 8) {
-            throw new \RuntimeException('HybridId requires 64-bit PHP');
+            throw new \RuntimeException(Messages::GEN_REQUIRE_64BIT);
         }
 
         if ($maxDriftMs < 1) {
             throw new \InvalidArgumentException(
-                sprintf('maxDriftMs must be a positive integer, got %d', $maxDriftMs),
+                sprintf(Messages::GEN_DRIFT_INVALID, $maxDriftMs),
             );
         }
         $this->maxDriftMs = $maxDriftMs;
@@ -93,7 +94,7 @@ final class HybridIdGenerator implements IdGenerator
         $config = $this->registry->get($profileName);
         if ($config === null) {
             throw new InvalidProfileException(
-                sprintf('Unknown profile "%s"', $profileName),
+                sprintf(Messages::GEN_PROFILE_UNKNOWN, $profileName),
             );
         }
         $this->profile = $profileName;
@@ -101,14 +102,14 @@ final class HybridIdGenerator implements IdGenerator
         $this->blind = $blind || $blindSecret !== null;
         if ($blindSecret !== null && strlen($blindSecret) < 32) {
             throw new \InvalidArgumentException(
-                sprintf('blindSecret must be at least 32 bytes, got %d', strlen($blindSecret)),
+                sprintf(Messages::GEN_BLIND_SECRET_LENGTH, strlen($blindSecret)),
             );
         }
         $this->blindSecret = $this->blind ? ($blindSecret ?? self::secureRandomBytes(32)) : null;
 
         if ($node !== null) {
             if (strlen($node) !== 2 || !self::isBase62String($node)) {
-                throw new InvalidIdException('Node must be exactly 2 base62 characters (0-9, A-Z, a-z)');
+                throw new InvalidIdException(Messages::GEN_NODE_INVALID);
             }
             $this->node = $node;
         } elseif ($this->profileConfig['node'] === 0) {
@@ -117,10 +118,7 @@ final class HybridIdGenerator implements IdGenerator
             // Blind mode: node is only used as HMAC input, secret differentiates instances
             $this->node = self::autoDetectNode();
         } elseif ($requireExplicitNode && $this->profileConfig['node'] > 0) {
-            throw new NodeRequiredException(
-                'Explicit node is required (requireExplicitNode is enabled). '
-                . 'Provide a 2-character base62 node identifier via the node parameter or HYBRID_ID_NODE env var.',
-            );
+            throw new NodeRequiredException(Messages::GEN_NODE_REQUIRED);
         } else {
             $this->node = self::autoDetectNode();
         }
@@ -129,7 +127,7 @@ final class HybridIdGenerator implements IdGenerator
             if ($maxIdLength < $this->profileConfig['length']) {
                 throw new IdOverflowException(
                     sprintf(
-                        'maxIdLength (%d) must be >= body length (%d) for profile "%s"',
+                        Messages::GEN_MAX_LENGTH_INVALID,
                         $maxIdLength,
                         $this->profileConfig['length'],
                         $profileName,
@@ -165,14 +163,14 @@ final class HybridIdGenerator implements IdGenerator
         $profile = Profile::tryFrom($profileValue) ?? $profileValue;
         if (is_string($profile) && $reg->get($profile) === null) {
             throw new InvalidProfileException(
-                sprintf('Invalid HYBRID_ID_PROFILE: "%s"', self::truncateForMessage($profileValue)),
+                sprintf(Messages::GEN_ENV_PROFILE_INVALID, self::truncateForMessage($profileValue)),
             );
         }
 
         $node = self::readEnv('HYBRID_ID_NODE');
         if ($node !== null && (strlen($node) !== 2 || !self::isBase62String($node))) {
             throw new \InvalidArgumentException(
-                sprintf('Invalid HYBRID_ID_NODE: "%s". Must be exactly 2 base62 characters.', self::truncateForMessage($node)),
+                sprintf(Messages::GEN_ENV_NODE_INVALID, self::truncateForMessage($node)),
             );
         }
 
@@ -187,7 +185,7 @@ final class HybridIdGenerator implements IdGenerator
         $blindSecretEnv = self::readEnv('HYBRID_ID_BLIND_SECRET');
         $blindSecret = $blindSecretEnv !== null ? base64_decode($blindSecretEnv, true) : null;
         if ($blindSecretEnv !== null && ($blindSecret === false || $blindSecret === '')) {
-            throw new \InvalidArgumentException('HYBRID_ID_BLIND_SECRET must be valid base64');
+            throw new \InvalidArgumentException(Messages::GEN_ENV_BLIND_SECRET_INVALID);
         }
 
         $maxLengthEnv = self::readEnv('HYBRID_ID_MAX_LENGTH');
@@ -196,7 +194,7 @@ final class HybridIdGenerator implements IdGenerator
             $maxIdLength = filter_var($maxLengthEnv, FILTER_VALIDATE_INT);
             if ($maxIdLength === false || $maxIdLength < 1) {
                 throw new \InvalidArgumentException(
-                    sprintf('Invalid HYBRID_ID_MAX_LENGTH: "%s". Must be a positive integer.', self::truncateForMessage($maxLengthEnv)),
+                    sprintf(Messages::GEN_ENV_MAX_LENGTH_INVALID, self::truncateForMessage($maxLengthEnv)),
                 );
             }
         }
@@ -318,7 +316,7 @@ final class HybridIdGenerator implements IdGenerator
     {
         if ($count < 1 || $count > 10_000) {
             throw new \InvalidArgumentException(
-                sprintf('Batch count must be between 1 and 10,000, got %d', $count),
+                sprintf(Messages::GEN_BATCH_LIMIT, $count),
             );
         }
 
@@ -458,7 +456,7 @@ final class HybridIdGenerator implements IdGenerator
     {
         if ($maxPrefixLength < 0 || $maxPrefixLength > self::PREFIX_MAX_LENGTH) {
             throw new InvalidPrefixException(
-                sprintf('maxPrefixLength must be between 0 and %d', self::PREFIX_MAX_LENGTH),
+                sprintf(Messages::GEN_PREFIX_LENGTH, self::PREFIX_MAX_LENGTH),
             );
         }
 
@@ -569,7 +567,7 @@ final class HybridIdGenerator implements IdGenerator
             // @codeCoverageIgnoreStart — unreachable: extractTimestamp() validates
             // the ID and any valid millisecond timestamp produces a valid DateTime.
             throw new \RuntimeException(
-                sprintf('Failed to create DateTime from HybridId (timestamp: %d ms)', $timestampMs),
+                sprintf(Messages::GEN_DATETIME_FAILED, $timestampMs),
             );
             // @codeCoverageIgnoreEnd
         }
@@ -654,7 +652,7 @@ final class HybridIdGenerator implements IdGenerator
 
         if ($config === null) {
             throw new InvalidProfileException(
-                sprintf('Unknown profile "%s"', $profileName),
+                sprintf(Messages::GEN_PROFILE_UNKNOWN, $profileName),
             );
         }
 
@@ -677,7 +675,7 @@ final class HybridIdGenerator implements IdGenerator
 
         if ($config === null) {
             throw new InvalidProfileException(
-                sprintf('Unknown profile "%s"', $profileName),
+                sprintf(Messages::GEN_PROFILE_UNKNOWN, $profileName),
             );
         }
 
@@ -838,7 +836,7 @@ final class HybridIdGenerator implements IdGenerator
         $config = $profile === $this->profile ? $this->profileConfig : $this->registry->get($profile);
 
         if ($config === null) {
-            throw new \InvalidArgumentException(sprintf('Unknown profile "%s"', $profile));
+            throw new \InvalidArgumentException(sprintf(Messages::GEN_PROFILE_UNKNOWN, $profile));
         }
 
         $now = (int) (microtime(true) * 1000);
@@ -854,7 +852,7 @@ final class HybridIdGenerator implements IdGenerator
             if ($now - $realNow > $this->maxDriftMs) {
                 throw new IdOverflowException(
                     sprintf(
-                        'Monotonic timestamp drift exceeds %dms. Reduce generation rate or use multiple instances.',
+                        Messages::GEN_DRIFT_EXCEEDED,
                         $this->maxDriftMs,
                     ),
                 );
@@ -891,7 +889,7 @@ final class HybridIdGenerator implements IdGenerator
         if ($this->maxIdLength !== null && strlen($fullId) > $this->maxIdLength) {
             throw new IdOverflowException(
                 sprintf(
-                    'Generated ID length %d exceeds maxIdLength %d. Use a shorter prefix or increase maxIdLength',
+                    Messages::GEN_ID_LENGTH_EXCEEDED,
                     strlen($fullId),
                     $this->maxIdLength,
                 ),
@@ -932,11 +930,11 @@ final class HybridIdGenerator implements IdGenerator
     public static function encodeBase62(int $num, int $length): string
     {
         if ($length < 1) {
-            throw new \InvalidArgumentException('Length must be at least 1');
+            throw new \InvalidArgumentException(Messages::GEN_ENCODE_LENGTH);
         }
 
         if ($num < 0) {
-            throw new IdOverflowException('Cannot encode negative value');
+            throw new IdOverflowException(Messages::GEN_ENCODE_NEGATIVE);
         }
 
         if ($num === 0) {
@@ -953,7 +951,7 @@ final class HybridIdGenerator implements IdGenerator
 
         if (strlen($encoded) > $length) {
             throw new IdOverflowException(
-                sprintf('Value exceeds maximum for %d base62 characters', $length),
+                sprintf(Messages::GEN_ENCODE_OVERFLOW, $length),
             );
         }
 
@@ -973,7 +971,7 @@ final class HybridIdGenerator implements IdGenerator
     public static function decodeBase62(string $str): int
     {
         if ($str === '') {
-            throw new InvalidIdException('Cannot decode empty string');
+            throw new InvalidIdException(Messages::GEN_DECODE_EMPTY);
         }
 
         // Early guard: strip leading zeros to count significant digits.
@@ -982,7 +980,7 @@ final class HybridIdGenerator implements IdGenerator
         // may or may not overflow, so the arithmetic check handles those.
         $significant = ltrim($str, '0');
         if ($significant !== '' && strlen($significant) > 11) {
-            throw new IdOverflowException('Value exceeds 64-bit integer range');
+            throw new IdOverflowException(Messages::GEN_DECODE_OVERFLOW);
         }
 
         $result = 0;
@@ -992,14 +990,14 @@ final class HybridIdGenerator implements IdGenerator
             $pos = self::BASE62_MAP[$str[$i]] ?? null;
 
             if ($pos === null) {
-                throw new InvalidIdException("Invalid base62 character: {$str[$i]}");
+                throw new InvalidIdException(sprintf(Messages::GEN_DECODE_INVALID_CHAR, $str[$i]));
             }
 
             // Check for overflow before performing the operation.
             // This avoids relying on is_float() which may not catch all
             // overflow scenarios (e.g. silent wrap to negative on some builds).
             if ($result > intdiv(PHP_INT_MAX - $pos, 62)) {
-                throw new IdOverflowException('Value exceeds 64-bit integer range');
+                throw new IdOverflowException(Messages::GEN_DECODE_OVERFLOW);
             }
 
             $result = $result * 62 + $pos;
@@ -1047,7 +1045,7 @@ final class HybridIdGenerator implements IdGenerator
     private static function assertValid(string $id): void
     {
         if (!self::isValid($id)) {
-            throw new InvalidIdException('Invalid HybridId format');
+            throw new InvalidIdException(Messages::GEN_FORMAT_INVALID);
         }
     }
 
@@ -1074,7 +1072,7 @@ final class HybridIdGenerator implements IdGenerator
         if (!self::isValidPrefix($prefix)) {
             throw new InvalidPrefixException(
                 sprintf(
-                    'Prefix must be 1-%d lowercase alphanumeric characters, starting with a letter',
+                    Messages::GEN_PREFIX_FORMAT,
                     self::PREFIX_MAX_LENGTH,
                 ),
             );
@@ -1088,13 +1086,13 @@ final class HybridIdGenerator implements IdGenerator
     private static function secureRandomBytes(int $length): string
     {
         if ($length < 1) {
-            throw new \InvalidArgumentException('Length must be at least 1');
+            throw new \InvalidArgumentException(Messages::GEN_ENCODE_LENGTH);
         }
         try {
             return random_bytes($length);
         } catch (\Random\RandomException $e) {
             throw new \RuntimeException(
-                'Failed to generate cryptographically secure random bytes',
+                Messages::GEN_URANDOM_FAILED,
                 0,
                 $e,
             );

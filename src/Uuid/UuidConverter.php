@@ -7,6 +7,7 @@ namespace HybridId\Uuid;
 use HybridId\Exception\IdOverflowException;
 use HybridId\Exception\InvalidIdException;
 use HybridId\Exception\InvalidProfileException;
+use HybridId\Exception\Messages;
 use HybridId\HybridIdGenerator;
 use HybridId\Profile;
 
@@ -42,7 +43,7 @@ final class UuidConverter
             'compact' => 0,
             'standard' => 1,
             default => throw new InvalidProfileException(
-                sprintf('Profile "%s" cannot be losslessly packed into UUIDv8 (max 60 random bits)', $parsed['profile']),
+                sprintf(Messages::UUID_PACK_UNSUPPORTED, $parsed['profile']),
             ),
         };
 
@@ -88,7 +89,7 @@ final class UuidConverter
         $profile = match ($profileIndex) {
             0 => 'compact',
             1 => 'standard',
-            default => throw new InvalidIdException('Unrecognized profile index in UUIDv8'),
+            default => throw new InvalidIdException(Messages::UUID_UNRECOGNIZED_PROFILE),
         };
 
         $config = HybridIdGenerator::profileConfig($profile);
@@ -218,15 +219,15 @@ final class UuidConverter
         $timestamp = $timestampMs ?? (int) (microtime(true) * 1000);
 
         if ($timestamp < 0) {
-            throw new InvalidIdException('Timestamp must be non-negative');
+            throw new InvalidIdException(Messages::UUID_NEGATIVE_TS);
         }
         if ($timestamp > 62 ** 8 - 1) {
-            throw new IdOverflowException('Timestamp exceeds maximum encodable value (62^8 - 1)');
+            throw new IdOverflowException(Messages::UUID_TS_OVERFLOW);
         }
 
         if ($node !== null) {
             if (strlen($node) !== 2 || strspn($node, HybridIdGenerator::BASE62) !== 2) {
-                throw new InvalidIdException('Node must be exactly 2 base62 characters');
+                throw new InvalidIdException(Messages::UUID_NODE_INVALID);
             }
             $nodeChars = $node;
         } else {
@@ -268,7 +269,7 @@ final class UuidConverter
         $parsed = HybridIdGenerator::parse($hybridId);
         if (!$parsed['valid']) {
             throw new InvalidIdException(
-                sprintf('Invalid HybridId: cannot convert to %s', $method),
+                sprintf(Messages::UUID_CONVERSION_INVALID, $method),
             );
         }
 
@@ -321,7 +322,7 @@ final class UuidConverter
     {
         $pattern = '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i';
         if (preg_match($pattern, $uuid) !== 1) {
-            throw new InvalidIdException('Invalid UUID format');
+            throw new InvalidIdException(Messages::UUID_INVALID_FORMAT);
         }
 
         $hex = self::stripHyphens($uuid);
@@ -330,14 +331,14 @@ final class UuidConverter
         $version = hexdec($hex[12]);
         if ($version !== $expectedVersion) {
             throw new InvalidIdException(
-                sprintf('Expected UUID version %d, got %d', $expectedVersion, $version),
+                sprintf(Messages::UUID_EXPECTED_VERSION, $expectedVersion, $version),
             );
         }
 
         // Single hex digit (max 15): cannot overflow, safeHexdec not needed.
         $variantNibble = hexdec($hex[16]);
         if (($variantNibble >> 2) !== 0b10) {
-            throw new InvalidIdException('Invalid UUID variant: expected RFC 4122 variant (10xx)');
+            throw new InvalidIdException(Messages::UUID_INVALID_VARIANT);
         }
     }
 
@@ -346,7 +347,7 @@ final class UuidConverter
         if ($profile !== 'compact' && $profile !== 'standard') {
             throw new InvalidProfileException(
                 sprintf(
-                    '%s() only supports compact and standard profiles (got "%s")',
+                    Messages::UUID_PROFILE_UNSUPPORTED,
                     $method,
                     $profile,
                 ),
@@ -373,8 +374,7 @@ final class UuidConverter
         if (HybridIdGenerator::extractPrefix($hybridId) !== null) {
             throw new InvalidIdException(
                 sprintf(
-                    '%s() does not accept prefixed IDs — prefixes are lost during UUID conversion. '
-                    . 'Strip the prefix first with HybridIdGenerator::extractPrefix() and track it separately.',
+                    Messages::UUID_PREFIX_REJECTED,
                     $method,
                 ),
             );
@@ -384,11 +384,11 @@ final class UuidConverter
     private static function safeHexdec(string $hex): int
     {
         if (strlen($hex) > 15) {
-            throw new InvalidIdException('Hex value exceeds 64-bit integer range');
+            throw new InvalidIdException(Messages::UUID_HEX_OVERFLOW);
         }
         $result = hexdec($hex);
         if (is_float($result)) {
-            throw new InvalidIdException('Hex value exceeds 64-bit integer range');
+            throw new InvalidIdException(Messages::UUID_HEX_OVERFLOW);
         }
         return $result;
     }

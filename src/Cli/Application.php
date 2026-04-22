@@ -23,11 +23,19 @@ final class Application
      */
     public function run(array $argv): int
     {
+        $jsonPos = array_search('--json', $argv, true);
+        $json = false;
+        if ($jsonPos !== false) {
+            $json = true;
+            unset($argv[$jsonPos]);
+            $argv = array_values($argv);
+        }
+
         $command = $argv[1] ?? 'help';
 
         return match ($command) {
-            'generate' => $this->commandGenerate(array_slice($argv, 2)),
-            'inspect'  => $this->commandInspect(array_slice($argv, 2)),
+            'generate' => $this->commandGenerate(array_slice($argv, 2), $json),
+            'inspect'  => $this->commandInspect(array_slice($argv, 2), $json),
             'profiles' => $this->commandProfiles(),
             'help', '--help', '-h' => $this->commandHelp(),
             default => $this->commandHelp(unknown: $command),
@@ -41,7 +49,7 @@ final class Application
     /**
      * @param list<string> $args
      */
-    private function commandGenerate(array $args): int
+    private function commandGenerate(array $args, bool $json = false): int
     {
         $profile = 'standard';
         $count = 1;
@@ -54,7 +62,11 @@ final class Application
                 case '-p':
                 case '--profile':
                     if (!isset($args[$i + 1])) {
-                        $this->output->error('Missing value for --profile');
+                        if ($json) {
+                            $this->output->error(json_encode(['error' => 'Missing value for --profile']));
+                        } else {
+                            $this->output->error('Missing value for --profile');
+                        }
                         return 1;
                     }
                     $profile = $args[++$i];
@@ -62,26 +74,42 @@ final class Application
                 case '-n':
                 case '--count':
                     if (!isset($args[$i + 1])) {
-                        $this->output->error('Missing value for --count');
+                        if ($json) {
+                            $this->output->error(json_encode(['error' => 'Missing value for --count']));
+                        } else {
+                            $this->output->error('Missing value for --count');
+                        }
                         return 1;
                     }
                     $raw = filter_var($args[++$i], FILTER_VALIDATE_INT);
                     if ($raw === false) {
-                        $this->output->error('Count must be a valid integer');
+                        if ($json) {
+                            $this->output->error(json_encode(['error' => 'Count must be a valid integer']));
+                        } else {
+                            $this->output->error('Count must be a valid integer');
+                        }
                         return 1;
                     }
                     $count = $raw;
                     break;
                 case '--node':
                     if (!isset($args[$i + 1])) {
-                        $this->output->error('Missing value for --node');
+                        if ($json) {
+                            $this->output->error(json_encode(['error' => 'Missing value for --node']));
+                        } else {
+                            $this->output->error('Missing value for --node');
+                        }
                         return 1;
                     }
                     $node = $args[++$i];
                     break;
                 case '--prefix':
                     if (!isset($args[$i + 1])) {
-                        $this->output->error('Missing value for --prefix');
+                        if ($json) {
+                            $this->output->error(json_encode(['error' => 'Missing value for --prefix']));
+                        } else {
+                            $this->output->error('Missing value for --prefix');
+                        }
                         return 1;
                     }
                     $prefix = $args[++$i];
@@ -91,37 +119,65 @@ final class Application
                     break;
                 default:
                     $arg = (string) $args[$i];
-                    $this->output->error(
-                        str_starts_with($arg, '-')
-                            ? 'Unknown option: ' . self::sanitize($arg)
-                            : 'Unexpected argument: ' . self::sanitize($arg),
-                    );
+                    $msg = str_starts_with($arg, '-')
+                        ? 'Unknown option: ' . self::sanitize($arg)
+                        : 'Unexpected argument: ' . self::sanitize($arg);
+                    if ($json) {
+                        $this->output->error(json_encode(['error' => $msg]));
+                    } else {
+                        $this->output->error($msg);
+                    }
                     return 1;
             }
         }
 
         if ($count < 1) {
-            $this->output->error('Count must be a positive integer');
+            if ($json) {
+                $this->output->error(json_encode(['error' => 'Count must be a positive integer']));
+            } else {
+                $this->output->error('Count must be a positive integer');
+            }
             return 1;
         }
         if ($count > 10000) {
-            $this->output->error('Count must not exceed 10,000');
+            if ($json) {
+                $this->output->error(json_encode(['error' => 'Count must not exceed 10,000']));
+            } else {
+                $this->output->error('Count must not exceed 10,000');
+            }
             return 1;
         }
 
         try {
             $gen = new HybridIdGenerator(profile: $profile, node: $node, requireExplicitNode: false, blind: $blind);
         } catch (\InvalidArgumentException $e) {
-            $this->output->error(self::sanitize($e->getMessage()));
+            if ($json) {
+                $this->output->error(json_encode(['error' => self::sanitize($e->getMessage())]));
+            } else {
+                $this->output->error(self::sanitize($e->getMessage()));
+            }
             return 1;
         }
 
+        $ids = [];
         for ($i = 0; $i < $count; $i++) {
             try {
-                $this->output->writeln($gen->generate($prefix));
+                $ids[] = $gen->generate($prefix);
             } catch (\Throwable $e) {
-                $this->output->error(self::sanitize($e->getMessage()));
+                if ($json) {
+                    $this->output->error(json_encode(['error' => self::sanitize($e->getMessage())]));
+                } else {
+                    $this->output->error(self::sanitize($e->getMessage()));
+                }
                 return 1;
+            }
+        }
+
+        if ($json) {
+            $this->output->writeln(json_encode(['ids' => $ids]));
+        } else {
+            foreach ($ids as $id) {
+                $this->output->writeln($id);
             }
         }
 
@@ -131,19 +187,27 @@ final class Application
     /**
      * @param list<string> $args
      */
-    private function commandInspect(array $args): int
+    private function commandInspect(array $args, bool $json = false): int
     {
         $id = $args[0] ?? null;
 
         if ($id === null || $id === '') {
-            $this->output->error('Usage: hybrid-id inspect <id>');
+            if ($json) {
+                $this->output->error(json_encode(['error' => 'Usage: hybrid-id inspect <id>']));
+            } else {
+                $this->output->error('Usage: hybrid-id inspect <id>');
+            }
             return 1;
         }
 
         $profile = HybridIdGenerator::detectProfile($id);
 
         if ($profile === null) {
-            $this->output->error('Invalid HybridId: ' . self::sanitize($id));
+            if ($json) {
+                $this->output->error(json_encode(['error' => 'Invalid HybridId: ' . self::sanitize($id)]));
+            } else {
+                $this->output->error('Invalid HybridId: ' . self::sanitize($id));
+            }
             return 1;
         }
 
@@ -156,6 +220,22 @@ final class Application
         $randomOffset = 8 + $config['node'];
         $random = substr($rawId, $randomOffset);
         $entropy = HybridIdGenerator::entropy($profile);
+
+        if ($json) {
+            $this->output->writeln(json_encode([
+                'id' => $id,
+                'prefix' => $prefix,
+                'profile' => $profile,
+                'length' => $config['length'],
+                'timestamp' => $timestamp,
+                'datetime' => $datetime->format('Y-m-d H:i:s.v'),
+                'node' => $node,
+                'random' => $random,
+                'entropy_bits' => $entropy,
+                'valid' => true,
+            ]));
+            return 0;
+        }
 
         $this->output->writeln('');
         $this->output->writeln("  ID:         {$id}");
@@ -230,6 +310,10 @@ final class Application
         $this->output->writeln('  -n, --count <number>   Number of IDs to generate (default: 1)');
         $this->output->writeln('  --node <XX>            Node identifier (2 base62 chars)');
         $this->output->writeln('  --prefix <name>        Prefix for self-documenting IDs (e.g., usr, ord)');
+        $this->output->writeln('  --blind                Generate using blind mode (requires HYBRID_ID_BLIND_SECRET)');
+        $this->output->writeln('');
+        $this->output->writeln('Global options:');
+        $this->output->writeln('  --json                 Output in JSON format (applies to generate and inspect)');
         $this->output->writeln('');
         $this->output->writeln('Examples:');
         $this->output->writeln('  hybrid-id generate');
