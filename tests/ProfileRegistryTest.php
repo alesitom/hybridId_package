@@ -142,6 +142,7 @@ final class ProfileRegistryTest extends TestCase
         $this->expectException(InvalidProfileException::class);
         $this->expectExceptionMessage('between 6 and 128');
 
+        // @phpstan-ignore argument.type
         $registry->register('weak', 5);
     }
 
@@ -152,6 +153,7 @@ final class ProfileRegistryTest extends TestCase
         $this->expectException(InvalidProfileException::class);
         $this->expectExceptionMessage('between 6 and 128');
 
+        // @phpstan-ignore argument.type
         $registry->register('huge', 129);
     }
 
@@ -161,6 +163,7 @@ final class ProfileRegistryTest extends TestCase
 
         $this->expectException(InvalidProfileException::class);
 
+        // @phpstan-ignore argument.type
         $registry->register('norandom', 0);
     }
 

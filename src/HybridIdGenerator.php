@@ -62,7 +62,7 @@ final class HybridIdGenerator implements IdGenerator
      * When exceeded, generation throws IdOverflowException to prevent unbounded
      * future-dated timestamps.
      */
-    public const int DEFAULT_MAX_DRIFT_MS = 5000;
+    public const int DEFAULT_MAX_DRIFT_MS = 10000;
 
     private readonly int $maxDriftMs;
 
@@ -261,7 +261,7 @@ final class HybridIdGenerator implements IdGenerator
     }
 
     /**
-     * Generate a compact ID (16 chars: 8ts + 2node + 6random, ~35.7 bits entropy).
+     * Generate a compact ID (16 chars: 8ts + 8random, ~47.6 bits entropy).
      *
      * @note For multi-node deployments with more than a few hundred IDs/second,
      *       prefer standard() or extended() and set explicit node IDs.

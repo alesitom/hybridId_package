@@ -1336,6 +1336,7 @@ final class HybridIdGeneratorTest extends TestCase
         $this->assertIsInt($result['timestamp']);
         $this->assertInstanceOf(\DateTimeImmutable::class, $result['datetime']);
         $this->assertSame('A1', $result['node']);
+        // @phpstan-ignore argument.type
         $this->assertSame(10, strlen($result['random']));
     }
 
@@ -1349,6 +1350,7 @@ final class HybridIdGeneratorTest extends TestCase
         $this->assertTrue($result['valid']);
         $this->assertSame('usr', $result['prefix']);
         $this->assertSame('standard', $result['profile']);
+        // @phpstan-ignore argument.type
         $this->assertSame(20, strlen($result['body']));
         $this->assertSame('B2', $result['node']);
     }
@@ -1363,12 +1365,15 @@ final class HybridIdGeneratorTest extends TestCase
 
         $this->assertSame('compact', $compact['profile']);
         $this->assertNull($compact['node']); // compact has no node
+        // @phpstan-ignore argument.type
         $this->assertSame(8, strlen($compact['random']));
 
         $this->assertSame('standard', $standard['profile']);
+        // @phpstan-ignore argument.type
         $this->assertSame(10, strlen($standard['random']));
 
         $this->assertSame('extended', $extended['profile']);
+        // @phpstan-ignore argument.type
         $this->assertSame(14, strlen($extended['random']));
     }
 
@@ -1620,6 +1625,7 @@ final class HybridIdGeneratorTest extends TestCase
 
         $this->expectException(\InvalidArgumentException::class);
 
+        // @phpstan-ignore argument.type
         $gen->generateBatch(0);
     }
 
@@ -1629,6 +1635,7 @@ final class HybridIdGeneratorTest extends TestCase
 
         $this->expectException(\InvalidArgumentException::class);
 
+        // @phpstan-ignore argument.type
         $gen->generateBatch(-1);
     }
 
@@ -1638,6 +1645,7 @@ final class HybridIdGeneratorTest extends TestCase
 
         $this->expectException(\InvalidArgumentException::class);
 
+        // @phpstan-ignore argument.type
         $gen->generateBatch(10_001);
     }
 
