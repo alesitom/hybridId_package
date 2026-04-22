@@ -4,6 +4,12 @@
 ./vendor/bin/hybrid-id <command> [options]
 ```
 
+## Global Options
+
+| Flag | Description |
+|---|---|
+| `--json` | Emit machine-readable JSON from `generate`, `inspect`, and `profiles` (including errors). Useful for scripting and CI pipelines. |
+
 ## Commands
 
 ### `generate`
@@ -23,6 +29,8 @@ Generate one or more IDs.
 ./vendor/bin/hybrid-id generate -p compact -n 10
 ./vendor/bin/hybrid-id generate -p extended --node A1 --prefix txn
 ./vendor/bin/hybrid-id generate --blind
+./vendor/bin/hybrid-id --json generate -n 3
+# {"ids":["...","...","..."]}
 ```
 
 ### `inspect`

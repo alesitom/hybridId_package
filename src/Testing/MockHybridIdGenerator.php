@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace HybridId\Testing;
 
+use HybridId\Exception\Messages;
 use HybridId\HybridIdGenerator;
 use HybridId\IdGenerator;
-use HybridId\Exception\Messages;
 
 /** @since 4.0.0 */
 final class MockHybridIdGenerator implements IdGenerator

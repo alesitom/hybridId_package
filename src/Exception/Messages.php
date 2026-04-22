@@ -7,7 +7,10 @@ namespace HybridId\Exception;
 /**
  * Centralized exception messages.
  *
- * @internal
+ * @internal These constants are an implementation detail and may change
+ *           between minor versions. Do NOT assert against them in downstream
+ *           test suites — use substring matching on `$e->getMessage()` or
+ *           catch specific exception classes instead.
  */
 final class Messages
 {

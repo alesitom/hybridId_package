@@ -8,8 +8,8 @@ use HybridId\Exception\IdOverflowException;
 use HybridId\Exception\InvalidIdException;
 use HybridId\Exception\InvalidPrefixException;
 use HybridId\Exception\InvalidProfileException;
-use HybridId\Exception\NodeRequiredException;
 use HybridId\Exception\Messages;
+use HybridId\Exception\NodeRequiredException;
 
 final class HybridIdGenerator implements IdGenerator
 {

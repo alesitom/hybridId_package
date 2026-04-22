@@ -399,4 +399,114 @@ final class ApplicationTest extends TestCase
         // Null byte should be stripped
         $this->assertStringNotContainsString("\x00", $output->getErrors()[0]);
     }
+
+    // -------------------------------------------------------------------------
+    // --json flag
+    // -------------------------------------------------------------------------
+
+    public function testGenerateJsonOutput(): void
+    {
+        $output = new BufferedOutput();
+        $app = new Application($output);
+
+        $exitCode = $app->run(['hybrid-id', '--json', 'generate', '-n', '3']);
+
+        $this->assertSame(0, $exitCode);
+        $lines = $output->getLines();
+        $this->assertCount(1, $lines);
+
+        $decoded = json_decode($lines[0], true);
+        $this->assertIsArray($decoded);
+        $this->assertArrayHasKey('ids', $decoded);
+        $this->assertIsArray($decoded['ids']);
+        $this->assertCount(3, $decoded['ids']);
+        foreach ($decoded['ids'] as $id) {
+            $this->assertMatchesRegularExpression('/^[0-9A-Za-z]{20}$/', $id);
+        }
+    }
+
+    public function testGenerateJsonErrorOnInvalidCount(): void
+    {
+        $output = new BufferedOutput();
+        $app = new Application($output);
+
+        $exitCode = $app->run(['hybrid-id', '--json', 'generate', '-n', 'notanumber']);
+
+        $this->assertSame(1, $exitCode);
+        $errors = $output->getErrors();
+        $this->assertCount(1, $errors);
+
+        $decoded = json_decode($errors[0], true);
+        $this->assertIsArray($decoded);
+        $this->assertSame(['error' => 'Count must be a valid integer'], $decoded);
+    }
+
+    public function testInspectJsonOutput(): void
+    {
+        $gen = new HybridIdGenerator(node: 'T1');
+        $id = $gen->generate('usr');
+
+        $output = new BufferedOutput();
+        $app = new Application($output);
+
+        $exitCode = $app->run(['hybrid-id', '--json', 'inspect', $id]);
+
+        $this->assertSame(0, $exitCode);
+        $lines = $output->getLines();
+        $this->assertCount(1, $lines);
+
+        $decoded = json_decode($lines[0], true);
+        $this->assertIsArray($decoded);
+        $this->assertSame($id, $decoded['id']);
+        $this->assertSame('usr', $decoded['prefix']);
+        $this->assertSame('standard', $decoded['profile']);
+        $this->assertSame('T1', $decoded['node']);
+        $this->assertTrue($decoded['valid']);
+    }
+
+    public function testInspectJsonErrorOnInvalidId(): void
+    {
+        $output = new BufferedOutput();
+        $app = new Application($output);
+
+        $exitCode = $app->run(['hybrid-id', '--json', 'inspect', 'not-a-valid-id']);
+
+        $this->assertSame(1, $exitCode);
+        $decoded = json_decode($output->getErrors()[0], true);
+        $this->assertIsArray($decoded);
+        $this->assertArrayHasKey('error', $decoded);
+        $this->assertStringStartsWith('Invalid HybridId:', $decoded['error']);
+    }
+
+    public function testProfilesJsonOutput(): void
+    {
+        $output = new BufferedOutput();
+        $app = new Application($output);
+
+        $exitCode = $app->run(['hybrid-id', '--json', 'profiles']);
+
+        $this->assertSame(0, $exitCode);
+        $decoded = json_decode($output->getLines()[0], true);
+        $this->assertIsArray($decoded);
+        $this->assertArrayHasKey('profiles', $decoded);
+        $names = array_column($decoded['profiles'], 'name');
+        $this->assertContains('compact', $names);
+        $this->assertContains('standard', $names);
+        $this->assertContains('extended', $names);
+    }
+
+    public function testJsonFlagAcceptedBeforeOrAfterCommand(): void
+    {
+        foreach ([['--json', 'generate'], ['generate', '--json']] as $argOrder) {
+            $output = new BufferedOutput();
+            $app = new Application($output);
+
+            $exitCode = $app->run(array_merge(['hybrid-id'], $argOrder));
+
+            $this->assertSame(0, $exitCode);
+            $decoded = json_decode($output->getLines()[0], true);
+            $this->assertIsArray($decoded);
+            $this->assertArrayHasKey('ids', $decoded);
+        }
+    }
 }

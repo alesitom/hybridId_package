@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace HybridId;
 
 use HybridId\Exception\InvalidIdException;
+use HybridId\Exception\Messages;
 
 /**
  * Immutable Value Object representing a parsed HybridId.
@@ -28,7 +29,7 @@ final class HybridId implements \Stringable, \JsonSerializable
         $parsed = HybridIdGenerator::parse($id);
 
         if (!$parsed['valid']) {
-            throw new InvalidIdException(sprintf('Invalid HybridId format: "%s"', $id));
+            throw new InvalidIdException(sprintf('%s: "%s"', Messages::GEN_FORMAT_INVALID, $id));
         }
 
         /** @var string $profile */

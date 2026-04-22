@@ -12,6 +12,7 @@ use HybridId\HybridIdGenerator;
 final class Application
 {
     private OutputInterface $output;
+    private bool $json = false;
 
     public function __construct(?OutputInterface $output = null)
     {
@@ -24,9 +25,8 @@ final class Application
     public function run(array $argv): int
     {
         $jsonPos = array_search('--json', $argv, true);
-        $json = false;
         if ($jsonPos !== false) {
-            $json = true;
+            $this->json = true;
             unset($argv[$jsonPos]);
             $argv = array_values($argv);
         }
@@ -34,8 +34,8 @@ final class Application
         $command = $argv[1] ?? 'help';
 
         return match ($command) {
-            'generate' => $this->commandGenerate(array_slice($argv, 2), $json),
-            'inspect'  => $this->commandInspect(array_slice($argv, 2), $json),
+            'generate' => $this->commandGenerate(array_slice($argv, 2)),
+            'inspect'  => $this->commandInspect(array_slice($argv, 2)),
             'profiles' => $this->commandProfiles(),
             'help', '--help', '-h' => $this->commandHelp(),
             default => $this->commandHelp(unknown: $command),
@@ -49,7 +49,7 @@ final class Application
     /**
      * @param list<string> $args
      */
-    private function commandGenerate(array $args, bool $json = false): int
+    private function commandGenerate(array $args): int
     {
         $profile = 'standard';
         $count = 1;
@@ -62,55 +62,30 @@ final class Application
                 case '-p':
                 case '--profile':
                     if (!isset($args[$i + 1])) {
-                        if ($json) {
-                            $this->output->error(json_encode(['error' => 'Missing value for --profile']));
-                        } else {
-                            $this->output->error('Missing value for --profile');
-                        }
-                        return 1;
+                        return $this->emitError('Missing value for --profile');
                     }
                     $profile = $args[++$i];
                     break;
                 case '-n':
                 case '--count':
                     if (!isset($args[$i + 1])) {
-                        if ($json) {
-                            $this->output->error(json_encode(['error' => 'Missing value for --count']));
-                        } else {
-                            $this->output->error('Missing value for --count');
-                        }
-                        return 1;
+                        return $this->emitError('Missing value for --count');
                     }
                     $raw = filter_var($args[++$i], FILTER_VALIDATE_INT);
                     if ($raw === false) {
-                        if ($json) {
-                            $this->output->error(json_encode(['error' => 'Count must be a valid integer']));
-                        } else {
-                            $this->output->error('Count must be a valid integer');
-                        }
-                        return 1;
+                        return $this->emitError('Count must be a valid integer');
                     }
                     $count = $raw;
                     break;
                 case '--node':
                     if (!isset($args[$i + 1])) {
-                        if ($json) {
-                            $this->output->error(json_encode(['error' => 'Missing value for --node']));
-                        } else {
-                            $this->output->error('Missing value for --node');
-                        }
-                        return 1;
+                        return $this->emitError('Missing value for --node');
                     }
                     $node = $args[++$i];
                     break;
                 case '--prefix':
                     if (!isset($args[$i + 1])) {
-                        if ($json) {
-                            $this->output->error(json_encode(['error' => 'Missing value for --prefix']));
-                        } else {
-                            $this->output->error('Missing value for --prefix');
-                        }
-                        return 1;
+                        return $this->emitError('Missing value for --prefix');
                     }
                     $prefix = $args[++$i];
                     break;
@@ -122,41 +97,21 @@ final class Application
                     $msg = str_starts_with($arg, '-')
                         ? 'Unknown option: ' . self::sanitize($arg)
                         : 'Unexpected argument: ' . self::sanitize($arg);
-                    if ($json) {
-                        $this->output->error(json_encode(['error' => $msg]));
-                    } else {
-                        $this->output->error($msg);
-                    }
-                    return 1;
+                    return $this->emitError($msg);
             }
         }
 
         if ($count < 1) {
-            if ($json) {
-                $this->output->error(json_encode(['error' => 'Count must be a positive integer']));
-            } else {
-                $this->output->error('Count must be a positive integer');
-            }
-            return 1;
+            return $this->emitError('Count must be a positive integer');
         }
         if ($count > 10000) {
-            if ($json) {
-                $this->output->error(json_encode(['error' => 'Count must not exceed 10,000']));
-            } else {
-                $this->output->error('Count must not exceed 10,000');
-            }
-            return 1;
+            return $this->emitError('Count must not exceed 10,000');
         }
 
         try {
             $gen = new HybridIdGenerator(profile: $profile, node: $node, requireExplicitNode: false, blind: $blind);
         } catch (\InvalidArgumentException $e) {
-            if ($json) {
-                $this->output->error(json_encode(['error' => self::sanitize($e->getMessage())]));
-            } else {
-                $this->output->error(self::sanitize($e->getMessage()));
-            }
-            return 1;
+            return $this->emitError(self::sanitize($e->getMessage()));
         }
 
         $ids = [];
@@ -164,17 +119,12 @@ final class Application
             try {
                 $ids[] = $gen->generate($prefix);
             } catch (\Throwable $e) {
-                if ($json) {
-                    $this->output->error(json_encode(['error' => self::sanitize($e->getMessage())]));
-                } else {
-                    $this->output->error(self::sanitize($e->getMessage()));
-                }
-                return 1;
+                return $this->emitError(self::sanitize($e->getMessage()));
             }
         }
 
-        if ($json) {
-            $this->output->writeln(json_encode(['ids' => $ids]));
+        if ($this->json) {
+            $this->output->writeln(self::encodeJson(['ids' => $ids]));
         } else {
             foreach ($ids as $id) {
                 $this->output->writeln($id);
@@ -187,28 +137,18 @@ final class Application
     /**
      * @param list<string> $args
      */
-    private function commandInspect(array $args, bool $json = false): int
+    private function commandInspect(array $args): int
     {
         $id = $args[0] ?? null;
 
         if ($id === null || $id === '') {
-            if ($json) {
-                $this->output->error(json_encode(['error' => 'Usage: hybrid-id inspect <id>']));
-            } else {
-                $this->output->error('Usage: hybrid-id inspect <id>');
-            }
-            return 1;
+            return $this->emitError('Usage: hybrid-id inspect <id>');
         }
 
         $profile = HybridIdGenerator::detectProfile($id);
 
         if ($profile === null) {
-            if ($json) {
-                $this->output->error(json_encode(['error' => 'Invalid HybridId: ' . self::sanitize($id)]));
-            } else {
-                $this->output->error('Invalid HybridId: ' . self::sanitize($id));
-            }
-            return 1;
+            return $this->emitError('Invalid HybridId: ' . self::sanitize($id));
         }
 
         $prefix = HybridIdGenerator::extractPrefix($id);
@@ -221,8 +161,8 @@ final class Application
         $random = substr($rawId, $randomOffset);
         $entropy = HybridIdGenerator::entropy($profile);
 
-        if ($json) {
-            $this->output->writeln(json_encode([
+        if ($this->json) {
+            $this->output->writeln(self::encodeJson([
                 'id' => $id,
                 'prefix' => $prefix,
                 'profile' => $profile,
@@ -258,9 +198,24 @@ final class Application
 
     private function commandProfiles(): int
     {
-        $this->output->writeln('');
-        $this->output->writeln('  Profile     Length   Structure              Random bits   vs UUID v7');
-        $this->output->writeln('  -------     ------   ---------              -----------   ----------');
+        $profiles = [];
+        foreach (HybridIdGenerator::profiles() as $name) {
+            $config = HybridIdGenerator::profileConfig($name);
+            $entropy = HybridIdGenerator::entropy($name);
+            $profiles[] = [
+                'name' => $name,
+                'length' => $config['length'],
+                'ts' => $config['ts'],
+                'node' => $config['node'],
+                'random' => $config['random'],
+                'entropy_bits' => $entropy,
+            ];
+        }
+
+        if ($this->json) {
+            $this->output->writeln(self::encodeJson(['profiles' => $profiles]));
+            return 0;
+        }
 
         $comparisons = [
             'compact'  => '< UUID v7',
@@ -268,20 +223,22 @@ final class Application
             'extended' => '> UUID v7',
         ];
 
-        foreach (HybridIdGenerator::profiles() as $name) {
-            $config = HybridIdGenerator::profileConfig($name);
-            $entropy = HybridIdGenerator::entropy($name);
-            $structure = $config['node'] > 0
-                ? "{$config['ts']}ts + {$config['node']}node + {$config['random']}rand"
-                : "{$config['ts']}ts + {$config['random']}rand";
-            $cmp = $comparisons[$name] ?? 'custom';
+        $this->output->writeln('');
+        $this->output->writeln('  Profile     Length   Structure              Random bits   vs UUID v7');
+        $this->output->writeln('  -------     ------   ---------              -----------   ----------');
+
+        foreach ($profiles as $p) {
+            $structure = $p['node'] > 0
+                ? "{$p['ts']}ts + {$p['node']}node + {$p['random']}rand"
+                : "{$p['ts']}ts + {$p['random']}rand";
+            $cmp = $comparisons[$p['name']] ?? 'custom';
 
             $this->output->writeln(sprintf(
                 '  %-10s  %-7d  %-21s  %-12s  %s',
-                $name,
-                $config['length'],
+                $p['name'],
+                $p['length'],
                 $structure,
-                "{$entropy} bits",
+                "{$p['entropy_bits']} bits",
                 $cmp,
             ));
         }
@@ -313,7 +270,7 @@ final class Application
         $this->output->writeln('  --blind                Generate using blind mode (requires HYBRID_ID_BLIND_SECRET)');
         $this->output->writeln('');
         $this->output->writeln('Global options:');
-        $this->output->writeln('  --json                 Output in JSON format (applies to generate and inspect)');
+        $this->output->writeln('  --json                 Output in JSON format (generate, inspect, profiles)');
         $this->output->writeln('');
         $this->output->writeln('Examples:');
         $this->output->writeln('  hybrid-id generate');
@@ -321,6 +278,7 @@ final class Application
         $this->output->writeln('  hybrid-id generate -p extended --node A1');
         $this->output->writeln('  hybrid-id generate --prefix usr');
         $this->output->writeln('  hybrid-id inspect usr_0A1b2C3dX9YyZzWwQq12');
+        $this->output->writeln('  hybrid-id generate --json -n 3');
         $this->output->writeln('');
 
         return $unknown !== null ? 1 : 0;
@@ -331,6 +289,27 @@ final class Application
     // -------------------------------------------------------------------------
 
     private const int MAX_INPUT_LENGTH = 256;
+
+    /**
+     * Emit an error in the active output format (text or JSON) and return exit code 1.
+     */
+    private function emitError(string $message): int
+    {
+        if ($this->json) {
+            $this->output->error(self::encodeJson(['error' => $message]));
+        } else {
+            $this->output->error($message);
+        }
+        return 1;
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    private static function encodeJson(array $data): string
+    {
+        return json_encode($data, JSON_THROW_ON_ERROR);
+    }
 
     private static function sanitize(string $input): string
     {
