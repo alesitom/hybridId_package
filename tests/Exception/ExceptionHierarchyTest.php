@@ -20,6 +20,7 @@ final class ExceptionHierarchyTest extends TestCase
 
     public function testHybridIdExceptionExtendsThrowable(): void
     {
+        // @phpstan-ignore function.alreadyNarrowedType
         $this->assertTrue(is_a(HybridIdException::class, \Throwable::class, true));
     }
 
@@ -135,6 +136,7 @@ final class ExceptionHierarchyTest extends TestCase
                 continue;
             }
 
+            // @phpstan-ignore deadCode.unreachable
             $this->fail(sprintf('%s was not caught by HybridIdException', $e::class));
         }
     }

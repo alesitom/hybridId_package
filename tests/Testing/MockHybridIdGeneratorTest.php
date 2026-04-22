@@ -90,6 +90,7 @@ final class MockHybridIdGeneratorTest extends TestCase
 
         $this->expectException(\InvalidArgumentException::class);
 
+        // @phpstan-ignore argument.type
         $mock->generateBatch(0);
     }
 
@@ -99,6 +100,7 @@ final class MockHybridIdGeneratorTest extends TestCase
 
         $this->expectException(\InvalidArgumentException::class);
 
+        // @phpstan-ignore argument.type
         $mock->generateBatch(10_001);
     }
 
@@ -349,6 +351,7 @@ final class MockHybridIdGeneratorTest extends TestCase
 
         $this->expectException(\InvalidArgumentException::class);
 
+        // @phpstan-ignore argument.type
         $mock->generateBatch(0);
     }
 
@@ -358,6 +361,7 @@ final class MockHybridIdGeneratorTest extends TestCase
 
         $this->expectException(\InvalidArgumentException::class);
 
+        // @phpstan-ignore argument.type
         $mock->generateBatch(10_001);
     }
 }

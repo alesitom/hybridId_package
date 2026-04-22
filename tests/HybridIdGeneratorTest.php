@@ -208,19 +208,19 @@ final class HybridIdGeneratorTest extends TestCase
     {
         $gen = new HybridIdGenerator(requireExplicitNode: false);
 
-        // Generate enough IDs to push drift beyond 5000ms.
-        // Each call within the same ms increments by 1, so we need >5000 rapid calls.
+        // Generate enough IDs to push drift beyond 10000ms.
+        // Each call within the same ms increments by 1, so we need >10000 rapid calls.
         $this->expectException(IdOverflowException::class);
         $this->expectExceptionMessage('Monotonic timestamp drift exceeds');
 
-        for ($i = 0; $i < 10_000; $i++) {
+        for ($i = 0; $i < 15_000; $i++) {
             $gen->generate();
         }
     }
 
     public function testMonotonicDriftAllowsModerateRate(): void
     {
-        // A few hundred rapid calls should stay well within the 5000ms drift limit
+        // A few hundred rapid calls should stay well within the 10000ms drift limit
         $gen = new HybridIdGenerator(requireExplicitNode: false);
 
         for ($i = 0; $i < 200; $i++) {
@@ -228,6 +228,25 @@ final class HybridIdGeneratorTest extends TestCase
         }
 
         $this->assertTrue(HybridIdGenerator::isValid($id));
+    }
+
+    public function testMonotonicDriftToleratesUpToNewDefaultLimit(): void
+    {
+        // Regression guard for #217: the default drift cap was raised from 5000
+        // to 10000ms. 8000 rapid calls must NOT throw under the new default.
+        $gen = new HybridIdGenerator(requireExplicitNode: false);
+
+        for ($i = 0; $i < 8_000; $i++) {
+            $id = $gen->generate();
+        }
+
+        $this->assertTrue(HybridIdGenerator::isValid($id));
+    }
+
+    public function testDefaultMaxDriftMsMatchesBatchLimit(): void
+    {
+        // #217: default drift budget must cover generateBatch's maximum (10k IDs).
+        $this->assertSame(10_000, HybridIdGenerator::DEFAULT_MAX_DRIFT_MS);
     }
 
     // -------------------------------------------------------------------------
@@ -1336,6 +1355,7 @@ final class HybridIdGeneratorTest extends TestCase
         $this->assertIsInt($result['timestamp']);
         $this->assertInstanceOf(\DateTimeImmutable::class, $result['datetime']);
         $this->assertSame('A1', $result['node']);
+        // @phpstan-ignore argument.type
         $this->assertSame(10, strlen($result['random']));
     }
 
@@ -1349,6 +1369,7 @@ final class HybridIdGeneratorTest extends TestCase
         $this->assertTrue($result['valid']);
         $this->assertSame('usr', $result['prefix']);
         $this->assertSame('standard', $result['profile']);
+        // @phpstan-ignore argument.type
         $this->assertSame(20, strlen($result['body']));
         $this->assertSame('B2', $result['node']);
     }
@@ -1363,12 +1384,15 @@ final class HybridIdGeneratorTest extends TestCase
 
         $this->assertSame('compact', $compact['profile']);
         $this->assertNull($compact['node']); // compact has no node
+        // @phpstan-ignore argument.type
         $this->assertSame(8, strlen($compact['random']));
 
         $this->assertSame('standard', $standard['profile']);
+        // @phpstan-ignore argument.type
         $this->assertSame(10, strlen($standard['random']));
 
         $this->assertSame('extended', $extended['profile']);
+        // @phpstan-ignore argument.type
         $this->assertSame(14, strlen($extended['random']));
     }
 
@@ -1620,6 +1644,7 @@ final class HybridIdGeneratorTest extends TestCase
 
         $this->expectException(\InvalidArgumentException::class);
 
+        // @phpstan-ignore argument.type
         $gen->generateBatch(0);
     }
 
@@ -1629,6 +1654,7 @@ final class HybridIdGeneratorTest extends TestCase
 
         $this->expectException(\InvalidArgumentException::class);
 
+        // @phpstan-ignore argument.type
         $gen->generateBatch(-1);
     }
 
@@ -1638,6 +1664,7 @@ final class HybridIdGeneratorTest extends TestCase
 
         $this->expectException(\InvalidArgumentException::class);
 
+        // @phpstan-ignore argument.type
         $gen->generateBatch(10_001);
     }
 
