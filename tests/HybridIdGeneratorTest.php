@@ -168,6 +168,13 @@ final class HybridIdGeneratorTest extends TestCase
         $this->assertMatchesRegularExpression('/^[0-9A-Za-z]{2}$/', $gen->getNode());
     }
 
+    public function testConstructorSkipsNodeDetectionForNodelessProfile(): void
+    {
+        $gen = new HybridIdGenerator(profile: 'compact');
+
+        $this->assertSame('', $gen->getNode());
+    }
+
     // -------------------------------------------------------------------------
     // Multiple instances
     // -------------------------------------------------------------------------
@@ -1778,6 +1785,28 @@ final class HybridIdGeneratorTest extends TestCase
 
         $this->expectException(\InvalidArgumentException::class);
         HybridIdGenerator::minForTimestamp($ts, 'nonexistent');
+    }
+
+    public function testMinForDateTimeReturnsCorrectBound(): void
+    {
+        $dt = new \DateTimeImmutable('2025-01-01 12:00:00.123');
+        $ts = (int) $dt->format('Uv');
+
+        $this->assertSame(
+            HybridIdGenerator::minForTimestamp($ts, 'compact'),
+            HybridIdGenerator::minForDateTime($dt, 'compact')
+        );
+    }
+
+    public function testMaxForDateTimeReturnsCorrectBound(): void
+    {
+        $dt = new \DateTimeImmutable('2025-01-01 12:00:00.123');
+        $ts = (int) $dt->format('Uv');
+
+        $this->assertSame(
+            HybridIdGenerator::maxForTimestamp($ts, 'extended'),
+            HybridIdGenerator::maxForDateTime($dt, 'extended')
+        );
     }
 
     // -------------------------------------------------------------------------
