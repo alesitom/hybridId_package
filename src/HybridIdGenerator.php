@@ -339,9 +339,15 @@ final class HybridIdGenerator implements IdGenerator
         return $this->profile;
     }
 
-    public function getNode(): string
+    /**
+     * Get this instance's node identifier.
+     *
+     * Returns `null` for nodeless profiles (e.g. `compact` or custom profiles
+     * registered with `node: 0`).
+     */
+    public function getNode(): ?string
     {
-        return $this->node;
+        return $this->profileConfig['node'] === 0 ? null : $this->node;
     }
 
     /**

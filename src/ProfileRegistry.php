@@ -61,8 +61,8 @@ final class ProfileRegistry implements ProfileRegistryInterface
             throw new InvalidProfileException('Random length must be between 6 and 128');
         }
 
-        if ($node < 0) {
-            throw new InvalidProfileException('Node length must be zero or greater');
+        if ($node < 0 || $node > 10) {
+            throw new InvalidProfileException('Node length must be between 0 and 10');
         }
 
         $length = 8 + $node + $random;

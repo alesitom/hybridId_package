@@ -13,12 +13,12 @@ use HybridId\Exception\InvalidIdException;
  */
 final class HybridId implements \Stringable, \JsonSerializable
 {
-    private readonly string $id;
-    private readonly ?string $prefix;
-    private readonly string $profile;
-    private readonly int $timestamp;
-    private readonly \DateTimeImmutable $dateTime;
-    private readonly ?string $node;
+    public readonly string $id;
+    public readonly ?string $prefix;
+    public readonly string $profile;
+    public readonly int $timestamp;
+    public readonly \DateTimeImmutable $dateTime;
+    public readonly ?string $node;
 
     /**
      * @throws InvalidIdException If the given ID is invalid
@@ -31,16 +31,17 @@ final class HybridId implements \Stringable, \JsonSerializable
             throw new InvalidIdException(sprintf('Invalid HybridId format: "%s"', $id));
         }
 
-        $this->id = $id;
-        $this->prefix = $parsed['prefix'];
         /** @var string $profile */
         $profile = $parsed['profile'];
-        $this->profile = $profile;
         /** @var int $timestamp */
         $timestamp = $parsed['timestamp'];
-        $this->timestamp = $timestamp;
         /** @var \DateTimeImmutable $dateTime */
         $dateTime = $parsed['datetime'];
+
+        $this->id = $id;
+        $this->prefix = $parsed['prefix'];
+        $this->profile = $profile;
+        $this->timestamp = $timestamp;
         $this->dateTime = $dateTime;
         $this->node = $parsed['node'];
     }
@@ -53,36 +54,6 @@ final class HybridId implements \Stringable, \JsonSerializable
     public static function fromString(string $id): self
     {
         return new self($id);
-    }
-
-    public function getPrefix(): ?string
-    {
-        return $this->prefix;
-    }
-
-    public function getProfile(): string
-    {
-        return $this->profile;
-    }
-
-    public function getTimestamp(): int
-    {
-        return $this->timestamp;
-    }
-
-    public function getDateTime(): \DateTimeImmutable
-    {
-        return $this->dateTime;
-    }
-
-    public function getNode(): ?string
-    {
-        return $this->node;
-    }
-
-    public function toString(): string
-    {
-        return $this->id;
     }
 
     #[\Override]

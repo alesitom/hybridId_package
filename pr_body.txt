@@ -1,0 +1,26 @@
+## Overview
+This PR modernizes the CLI tooling and addresses a long-standing technical debt issue regarding error handling, improving both developer experience and codebase maintainability. 
+
+Closes #210
+Closes #212
+Closes #158
+
+## Changes Made
+### 1. Global JSON Output Flag (#210)
+Added a global `--json` flag to the `hybrid-id` executable. This allows commands like `generate` and `inspect` to bypass standard formatting and emit strict JSON, making it much easier to integrate the CLI into automated shell scripts, CI/CD pipelines, or external tools.
+
+### 2. Documented CLI Flags (#212)
+Added the missing documentation for the global `--blind` flag inside `Application::commandHelp()`. Previously, this feature was only discoverable by reading the external README; it is now natively visible in the terminal output.
+
+### 3. Exception Message Centralization (#158)
+We executed the deferred implementation plan for centralizing error messages. 
+**Implementation Plan Followed:**
+- Created a new internal `HybridId\Exception\Messages` class.
+- Replaced approximately ~40 hardcoded exception strings scattered across `ProfileRegistry`, `MockHybridIdGenerator`, `UuidConverter`, and `HybridIdGenerator`.
+- Leveraged `sprintf()` for dynamic messages while porting the base templates into strict constants.
+- **Zero Breaking Changes:** String fidelity was completely maintained. The PHPUnit test suite passes completely, confirming that no external assertions relying on exact exception messages were broken.
+
+## Verification
+- [x] Tested CLI `generate --json` and `inspect --json` locally.
+- [x] Verified `phpstan` max level compliance.
+- [x] Verified `phpunit` suite passes with 100% success rate.

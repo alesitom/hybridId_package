@@ -142,9 +142,19 @@ final class ProfileRegistryTest extends TestCase
         $registry = ProfileRegistry::withDefaults();
 
         $this->expectException(InvalidProfileException::class);
-        $this->expectExceptionMessage('zero or greater');
+        $this->expectExceptionMessage('between 0 and 10');
 
         $registry->register('baddnode', 10, -1);
+    }
+
+    public function testRegisterRejectsExcessiveNodeLength(): void
+    {
+        $registry = ProfileRegistry::withDefaults();
+
+        $this->expectException(InvalidProfileException::class);
+        $this->expectExceptionMessage('between 0 and 10');
+
+        $registry->register('bignode', 10, 11);
     }
 
     public function testRegisterRejectsLengthConflict(): void
