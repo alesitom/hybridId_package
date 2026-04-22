@@ -45,7 +45,7 @@ final class ProfileRegistry implements ProfileRegistryInterface
     }
 
     #[\Override]
-    public function register(string $name, int $random): void
+    public function register(string $name, int $random, int $node = 2): void
     {
         if (!preg_match('/^[a-z][a-z0-9]*$/', $name)) {
             throw new InvalidProfileException('Profile name must be lowercase alphanumeric, starting with a letter');
@@ -61,7 +61,11 @@ final class ProfileRegistry implements ProfileRegistryInterface
             throw new InvalidProfileException('Random length must be between 6 and 128');
         }
 
-        $length = 8 + 2 + $random;
+        if ($node < 0 || $node > 10) {
+            throw new InvalidProfileException('Node length must be between 0 and 10');
+        }
+
+        $length = 8 + $node + $random;
 
         $existing = $this->getByLength($length);
         if ($existing !== null) {
@@ -73,7 +77,7 @@ final class ProfileRegistry implements ProfileRegistryInterface
         $this->custom[$name] = [
             'length' => $length,
             'ts' => 8,
-            'node' => 2,
+            'node' => $node,
             'random' => $random,
         ];
         $this->customLengthMap[$length] = $name;

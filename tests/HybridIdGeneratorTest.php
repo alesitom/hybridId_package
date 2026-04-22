@@ -168,6 +168,13 @@ final class HybridIdGeneratorTest extends TestCase
         $this->assertMatchesRegularExpression('/^[0-9A-Za-z]{2}$/', $gen->getNode());
     }
 
+    public function testConstructorSkipsNodeDetectionForNodelessProfile(): void
+    {
+        $gen = new HybridIdGenerator(profile: 'compact');
+
+        $this->assertNull($gen->getNode());
+    }
+
     // -------------------------------------------------------------------------
     // Multiple instances
     // -------------------------------------------------------------------------
@@ -1780,6 +1787,43 @@ final class HybridIdGeneratorTest extends TestCase
         HybridIdGenerator::minForTimestamp($ts, 'nonexistent');
     }
 
+    public function testMinForDateTimeReturnsCorrectBound(): void
+    {
+        $dt = new \DateTimeImmutable('2025-01-01 12:00:00.123');
+        $ts = (int) $dt->format('Uv');
+
+        $this->assertSame(
+            HybridIdGenerator::minForTimestamp($ts, 'compact'),
+            HybridIdGenerator::minForDateTime($dt, 'compact'),
+        );
+    }
+
+    public function testMaxForDateTimeReturnsCorrectBound(): void
+    {
+        $dt = new \DateTimeImmutable('2025-01-01 12:00:00.123');
+        $ts = (int) $dt->format('Uv');
+
+        $this->assertSame(
+            HybridIdGenerator::maxForTimestamp($ts, 'extended'),
+            HybridIdGenerator::maxForDateTime($dt, 'extended'),
+        );
+    }
+
+    public function testDateTimeHelpersAcceptProfileEnum(): void
+    {
+        $dt = new \DateTimeImmutable('2025-01-01 12:00:00.123');
+        $ts = (int) $dt->format('Uv');
+
+        $this->assertSame(
+            HybridIdGenerator::minForTimestamp($ts, Profile::Standard),
+            HybridIdGenerator::minForDateTime($dt, Profile::Standard),
+        );
+        $this->assertSame(
+            HybridIdGenerator::maxForTimestamp($ts, Profile::Standard),
+            HybridIdGenerator::maxForDateTime($dt, Profile::Standard),
+        );
+    }
+
     // -------------------------------------------------------------------------
     // Production node guard (#103)
     // -------------------------------------------------------------------------
@@ -1934,12 +1978,12 @@ final class HybridIdGeneratorTest extends TestCase
             putenv('HYBRID_ID_NODE');
             putenv('HYBRID_ID_REQUIRE_NODE');
 
-            $_SERVER['HYBRID_ID_PROFILE'] = 'compact';
+            $_SERVER['HYBRID_ID_PROFILE'] = 'standard';
             $_SERVER['HYBRID_ID_NODE'] = 'R2';
 
             $gen = HybridIdGenerator::fromEnv();
 
-            $this->assertSame('compact', $gen->getProfile());
+            $this->assertSame('standard', $gen->getProfile());
             $this->assertSame('R2', $gen->getNode());
         } finally {
             unset($_SERVER['HYBRID_ID_PROFILE'], $_SERVER['HYBRID_ID_NODE']);

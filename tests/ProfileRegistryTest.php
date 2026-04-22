@@ -94,6 +94,19 @@ final class ProfileRegistryTest extends TestCase
         $this->assertSame(2, $config['node']);
     }
 
+    public function testRegisterCustomNodelessProfile(): void
+    {
+        $registry = ProfileRegistry::withDefaults();
+        $registry->register('nodeless', 10, 0);
+
+        $config = $registry->get('nodeless');
+        $this->assertNotNull($config);
+        $this->assertSame(18, $config['length']); // 8 + 0 + 10
+        $this->assertSame(10, $config['random']);
+        $this->assertSame(8, $config['ts']);
+        $this->assertSame(0, $config['node']);
+    }
+
     public function testCustomProfileAppearsInAll(): void
     {
         $registry = ProfileRegistry::withDefaults();
@@ -122,6 +135,26 @@ final class ProfileRegistryTest extends TestCase
         $this->expectExceptionMessage('already exists');
 
         $registry->register('compact', 10);
+    }
+
+    public function testRegisterRejectsNegativeNodeLength(): void
+    {
+        $registry = ProfileRegistry::withDefaults();
+
+        $this->expectException(InvalidProfileException::class);
+        $this->expectExceptionMessage('between 0 and 10');
+
+        $registry->register('baddnode', 10, -1);
+    }
+
+    public function testRegisterRejectsExcessiveNodeLength(): void
+    {
+        $registry = ProfileRegistry::withDefaults();
+
+        $this->expectException(InvalidProfileException::class);
+        $this->expectExceptionMessage('between 0 and 10');
+
+        $registry->register('bignode', 10, 11);
     }
 
     public function testRegisterRejectsLengthConflict(): void

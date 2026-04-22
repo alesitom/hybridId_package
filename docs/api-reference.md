@@ -165,13 +165,21 @@ Lowest possible ID for a timestamp. Use as inclusive lower bound.
 
 Highest possible ID for a timestamp. Use as inclusive upper bound.
 
+### `minForDateTime(DateTimeInterface $dateTime, Profile|string $profile = 'standard'): string`
+
+Convenience wrapper around `minForTimestamp` that accepts a `DateTimeInterface`. Extracts milliseconds via `format('Uv')`.
+
+### `maxForDateTime(DateTimeInterface $dateTime, Profile|string $profile = 'standard'): string`
+
+Convenience wrapper around `maxForTimestamp` that accepts a `DateTimeInterface`.
+
 ```php
-$start = strtotime('2026-01-01') * 1000;
-$end   = strtotime('2026-02-01') * 1000;
+$start = new \DateTimeImmutable('2026-01-01');
+$end   = new \DateTimeImmutable('2026-02-01');
 
 $query = "SELECT * FROM orders
     WHERE id >= ? AND id <= ?";
-// Bind: minForTimestamp($start), maxForTimestamp($end)
+// Bind: minForDateTime($start), maxForDateTime($end)
 ```
 
 See [Database Guide](database.md) for more query patterns.
@@ -222,11 +230,36 @@ HybridIdGenerator::recommendedColumnSize('standard', 3);
 
 ```php
 $gen->getProfile();      // 'standard'
-$gen->getNode();         // 'A1'
+$gen->getNode();         // 'A1' — or null for nodeless profiles (e.g. compact)
 $gen->bodyLength();      // 20
 $gen->getMaxIdLength();  // null or configured limit
 $gen->isBlind();         // false
 ```
+
+## Value Object
+
+### `HybridId`
+
+Immutable value object wrapping a parsed ID. Implements `Stringable` and `JsonSerializable`.
+
+```php
+use HybridId\HybridId;
+
+$id = new HybridId('usr_0VBFDQz4A1Rtntu09sbf');
+// or: HybridId::fromString(...)
+
+$id->id;         // 'usr_0VBFDQz4A1Rtntu09sbf'
+$id->prefix;     // 'usr' | null
+$id->profile;    // 'standard'
+$id->timestamp;  // int (ms since epoch)
+$id->dateTime;   // DateTimeImmutable
+$id->node;       // 'A1' | null (null for nodeless profiles)
+
+(string) $id;             // same as $id->id
+json_encode($id);         // "\"usr_0VBFDQz4A1Rtntu09sbf\""
+```
+
+Throws `InvalidIdException` if the string is not a valid HybridId. Uses the static `parse()` under the hood, so only built-in profiles are recognized — for IDs generated with caller-registered custom profiles, validate via a generator instance instead.
 
 ## Custom Profiles
 
@@ -237,7 +270,8 @@ use HybridId\ProfileRegistry;
 use HybridId\HybridIdGenerator;
 
 $registry = ProfileRegistry::withDefaults();
-$registry->register('medium', 12); // 8ts + 2node + 12rand = 22 chars
+$registry->register('medium', 12);            // 8ts + 2node + 12rand = 22 chars
+$registry->register('tiny', 10, node: 0);     // 8ts + 0node + 10rand = 18 chars (nodeless)
 
 $gen = new HybridIdGenerator(
     profile: 'medium',
@@ -248,11 +282,13 @@ $gen = new HybridIdGenerator(
 $id = $gen->generate('evt'); // evt_<22chars>
 ```
 
+Signature: `register(string $name, int $random, int $node = 2): void`
+
 Constraints:
 - Name: lowercase alphanumeric, starts with a letter
 - Random: 6-128 characters
+- Node: 0-10 characters (0 produces a nodeless profile like `compact`)
 - Total length must not conflict with existing profiles
-- Custom profiles always include node (2 chars)
 
 ### Deprecated global registration
 

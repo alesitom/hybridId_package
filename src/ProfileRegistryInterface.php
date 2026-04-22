@@ -21,9 +21,10 @@ interface ProfileRegistryInterface
     /**
      * Register a custom profile.
      * @param int<6, 128> $random Number of random characters
-     * @throws \HybridId\Exception\InvalidProfileException If name/random is invalid or conflicts
+     * @param int<0, 10>  $node   Number of node characters (0 = nodeless)
+     * @throws \HybridId\Exception\InvalidProfileException If name/random/node is invalid or conflicts
      */
-    public function register(string $name, int $random): void;
+    public function register(string $name, int $random, int $node = 2): void;
 
     /**
      * Get all profile names.

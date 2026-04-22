@@ -111,6 +111,8 @@ final class HybridIdGenerator implements IdGenerator
                 throw new InvalidIdException('Node must be exactly 2 base62 characters (0-9, A-Z, a-z)');
             }
             $this->node = $node;
+        } elseif ($this->profileConfig['node'] === 0) {
+            $this->node = '';
         } elseif ($this->blind) {
             // Blind mode: node is only used as HMAC input, secret differentiates instances
             $this->node = self::autoDetectNode();
@@ -337,9 +339,15 @@ final class HybridIdGenerator implements IdGenerator
         return $this->profile;
     }
 
-    public function getNode(): string
+    /**
+     * Get this instance's node identifier.
+     *
+     * Returns `null` for nodeless profiles (e.g. `compact` or custom profiles
+     * registered with `node: 0`).
+     */
+    public function getNode(): ?string
     {
-        return $this->node;
+        return $this->profileConfig['node'] === 0 ? null : $this->node;
     }
 
     /**
@@ -787,6 +795,38 @@ final class HybridIdGenerator implements IdGenerator
         $ts = self::encodeBase62($timestampMs, $config['ts']);
 
         return $ts . str_repeat('z', $config['node'] + $config['random']);
+    }
+
+    /**
+     * Return the lowest possible ID for a given DateTime and profile.
+     *
+     * Useful for constructing inclusive lower bounds in DB range queries:
+     *   WHERE id >= minForDateTime($startDt)
+     *
+     * @throws InvalidProfileException If profile is unknown
+     * @throws IdOverflowException If timestamp exceeds encodable range
+     *
+     * @since 4.1.0
+     */
+    public static function minForDateTime(\DateTimeInterface $dateTime, Profile|string $profile = Profile::Standard): string
+    {
+        return self::minForTimestamp((int) $dateTime->format('Uv'), $profile);
+    }
+
+    /**
+     * Return the highest possible ID for a given DateTime and profile.
+     *
+     * Useful for constructing inclusive upper bounds in DB range queries:
+     *   WHERE id <= maxForDateTime($endDt)
+     *
+     * @throws InvalidProfileException If profile is unknown
+     * @throws IdOverflowException If timestamp exceeds encodable range
+     *
+     * @since 4.1.0
+     */
+    public static function maxForDateTime(\DateTimeInterface $dateTime, Profile|string $profile = Profile::Standard): string
+    {
+        return self::maxForTimestamp((int) $dateTime->format('Uv'), $profile);
     }
 
     // -------------------------------------------------------------------------
