@@ -4,6 +4,36 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [4.4.0] - 2026-04-22
+
+### Added
+- `HybridId` value object — immutable wrapper with public readonly properties (`id`, `prefix`, `profile`, `timestamp`, `dateTime`, `node`). Implements `Stringable` and `JsonSerializable`. Factory: `HybridId::fromString()` (#219, #225)
+- `HybridIdGenerator::minForDateTime()` / `maxForDateTime()` — `DateTimeInterface`-accepting variants of the existing `minForTimestamp()` / `maxForTimestamp()` range helpers (#220, #225)
+- `ProfileRegistry::register()` now accepts an optional `int $node = 2` parameter — enables custom nodeless profiles. Range validated to 0–10 (#223, #225)
+- CLI global `--json` flag — emits machine-readable JSON from `generate`, `inspect`, and `profiles` (including error paths). Useful for scripting and CI pipelines (#210, #226)
+- CLI `--blind` flag is now documented in `hybrid-id help` output (#212, #226)
+- Internal `HybridId\Exception\Messages` class — centralizes exception message templates (#158, #226)
+
+### Changed
+- `DEFAULT_MAX_DRIFT_MS` raised from 5000 to 10000 to match the `generateBatch()` maximum, so a full-size batch no longer risks tripping the drift guard on its own (#217, #224)
+- `HybridIdGenerator::getNode()` return type narrowed to `?string` — returns `null` for nodeless profiles (e.g. `compact`). **Soft BC note:** callers that assumed a 2-char non-empty string for nodeless profiles now receive `null`. Previously they received an empty internal sentinel string (#225)
+- `HybridIdGenerator::__construct()` skips `autoDetectNode()` entirely for nodeless profiles — avoids needless hostname/IP resolution (#222, #225)
+- `ProfileRegistryInterface::register()` signature updated to include the new `int $node = 2` parameter so implementations stay consistent. Has a default value, but classes implementing the interface with a stricter custom signature may need updating (#225)
+
+### Fixed
+- `compact()` profile docblock corrected: `8ts + 8rand` (previously claimed `8ts + 2node + 6rand`) (#221, #224)
+- PHPStan false positives in tests for intentionally invalid arguments (`generateBatch(0)`, `register('x', 5)`, etc.) silenced via targeted `@phpstan-ignore` annotations (#218, #224)
+- Static `HybridId::__construct` now reuses the centralized `Messages::GEN_FORMAT_INVALID` string instead of diverging from `HybridIdGenerator::parse()` (#226)
+
+### Documentation
+- `docs/api-reference.md`: entries for `HybridId` value object, `minForDateTime` / `maxForDateTime`, and the new `$node` parameter on `ProfileRegistry::register()` (#225)
+- `docs/cli.md`: Global Options section documenting `--json` with example (#226)
+- `docs/internals.md` and `docs/api-reference.md`: drift cap references updated from 5000ms to 10000ms (#224)
+
+### CI
+- Bumped `shivammathur/setup-php` 2.36.0 → 2.37.0 (#215)
+- Bumped `codecov/codecov-action` 5.4.3 → 6.0.0 (v6 requires Node 24, which GitHub-hosted runners already provide) (#216)
+
 ## [4.3.0] - 2026-02-19
 
 ### Fixed
