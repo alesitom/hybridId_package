@@ -15,9 +15,9 @@ This guarantees strict ordering within an instance but introduces "drift" — th
 
 ### Drift cap
 
-`MAX_DRIFT_MS = 5000`. If the counter drifts more than 5 seconds ahead of real time, `IdOverflowException` is thrown. This prevents unbounded future-dated timestamps under sustained high throughput.
+`MAX_DRIFT_MS = 10000`. If the counter drifts more than 10 seconds ahead of real time, `IdOverflowException` is thrown. This prevents unbounded future-dated timestamps under sustained high throughput.
 
-Practical impact: ~5,000 IDs/ms sustained before the cap triggers. Normal workloads never hit this.
+Practical impact: ~10,000 IDs/ms sustained before the cap triggers. Normal workloads never hit this.
 
 ### Forward clock jumps
 

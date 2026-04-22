@@ -101,7 +101,7 @@ final class PerformanceTest extends TestCase
     public function testGenerateBatch10000Under5s(): void
     {
         // Use higher drift cap — 10k IDs at sub-ms speed will drift the
-        // monotonic clock well beyond the default 5000ms cap.
+        // monotonic clock up to the default 10000ms cap, so we bump it.
         $gen = new HybridIdGenerator(node: 'A1', maxDriftMs: 60_000);
         $gen->generateBatch(1);
 

@@ -31,7 +31,7 @@ $ids = $gen->generateBatch(100, 'evt');
 // ['evt_...', 'evt_...', ...] — 100 unique, ordered IDs
 ```
 
-Large batches advance the monotonic counter proportionally (e.g. 5,000 IDs = ~5s drift). Throws `IdOverflowException` if drift exceeds `MAX_DRIFT_MS` (5,000ms).
+Large batches advance the monotonic counter proportionally (e.g. 10,000 IDs = ~10s drift). Throws `IdOverflowException` if drift exceeds `MAX_DRIFT_MS` (10,000ms).
 
 ### `fromEnv(?ProfileRegistryInterface $registry = null): self` (static)
 
